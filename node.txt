@@ -1,0 +1,4 @@
+user mthu09062007_db_user
+password: giuzfPeMDO410kJT
+
+mongodb+srv://mthu09062007_db_user:giuzfPeMDO410kJT@cluster0-edutime.yfroc3a.mongodb.net/?appName=Cluster0-EduTime
