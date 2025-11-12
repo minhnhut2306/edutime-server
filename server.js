@@ -15,6 +15,12 @@ app.use((req, res, next) => {
   console.log('Content-Type:', req.headers['content-type']);
   next();
 });
+app.get("/", (req, res) => {
+  res.json({
+    message: "Backend đang chạy!",
+    timestamp: new Date().toISOString(),
+  });
+});
 
 const router = require("./src/route/routes");
 app.use("/api", router);
