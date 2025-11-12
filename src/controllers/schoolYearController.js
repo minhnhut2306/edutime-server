@@ -1,5 +1,5 @@
 // src/controllers/schoolYear.controller.js
-const schoolYearService = require('../services/schoolYearService    ');
+const schoolYearService = require('../services/schoolYearService');
 const {
   successResponse,
   createdResponse,
