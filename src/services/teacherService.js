@@ -1,6 +1,7 @@
-// src/services/teacherService.js
 const Teacher = require("../models/teacherModel");
 const User = require("../models/userModel");
+const Subject = require("../models/subjectModel");
+const Class = require("../models/classesModel");
 const XLSX = require("xlsx");
 
 const getTeachers = async (filters = {}) => {
@@ -47,17 +48,24 @@ const getTeacherById = async (id) => {
 const createTeacher = async (data) => {
   const { name, phone, userId, subjectIds, mainClassId } = data;
 
-  const existingPhone = await Teacher.findOne({ phone });
+  if (!name || !userId) {
+    throw new Error("Name and userId are required");
+  }
+
+  const [existingPhone, existingUser, user] = await Promise.all([
+    phone ? Teacher.findOne({ phone }) : null,
+    Teacher.findOne({ userId }),
+    User.findById(userId),
+  ]);
+
   if (existingPhone) {
     throw new Error("Phone number already exists");
   }
 
-  const existingUser = await Teacher.findOne({ userId });
   if (existingUser) {
     throw new Error("User already assigned to another teacher");
   }
 
-  const user = await User.findById(userId);
   if (!user) {
     throw new Error("User not found");
   }
@@ -83,18 +91,27 @@ const updateTeacher = async (id, data) => {
     throw new Error("Teacher not found");
   }
 
+  const checks = [];
+
   if (data.phone && data.phone !== teacher.phone) {
-    const existingPhone = await Teacher.findOne({ phone: data.phone });
-    if (existingPhone) {
-      throw new Error("Phone number already exists");
-    }
+    checks.push(
+      Teacher.findOne({ phone: data.phone }).then((existing) => {
+        if (existing) throw new Error("Phone number already exists");
+      })
+    );
   }
 
   if (data.userId && data.userId.toString() !== teacher.userId.toString()) {
-    const existingUser = await Teacher.findOne({ userId: data.userId });
-    if (existingUser) {
-      throw new Error("User already assigned to another teacher");
-    }
+    checks.push(
+      Teacher.findOne({ userId: data.userId }).then((existing) => {
+        if (existing)
+          throw new Error("User already assigned to another teacher");
+      })
+    );
+  }
+
+  if (checks.length > 0) {
+    await Promise.all(checks);
   }
 
   const updatedTeacher = await Teacher.findByIdAndUpdate(
@@ -111,12 +128,11 @@ const updateTeacher = async (id, data) => {
 };
 
 const deleteTeacher = async (id) => {
-  const teacher = await Teacher.findById(id);
+  const teacher = await Teacher.findByIdAndDelete(id);
+  
   if (!teacher) {
     throw new Error("Teacher not found");
   }
-
-  await Teacher.findByIdAndDelete(id);
 
   return {
     message: "Teacher deleted successfully",
@@ -126,6 +142,29 @@ const deleteTeacher = async (id) => {
     },
   };
 };
+
+const generateTeacherCode = async () => {
+  const lastTeacher = await Teacher.findOne()
+    .sort({ teacherCode: -1 })
+    .select("teacherCode");
+
+  if (!lastTeacher || !lastTeacher.teacherCode) {
+    return "GV001";
+  }
+
+  const lastNumber = parseInt(lastTeacher.teacherCode.substring(2));
+  const nextNumber = lastNumber + 1;
+
+  return `GV${nextNumber.toString().padStart(3, "0")}`;
+};
+
+const getRowValue = (row, fieldName) => {
+  const key = Object.keys(row).find(
+    (k) => k.toLowerCase() === fieldName.toLowerCase()
+  );
+  return key ? row[key] : null;
+};
+
 const importTeachers = async (file) => {
   if (!file) {
     throw new Error("No file uploaded");
@@ -140,25 +179,6 @@ const importTeachers = async (file) => {
     throw new Error("Excel file is empty");
   }
 
-  // Hàm tạo mã giáo viên tự động
-  const generateTeacherCode = async () => {
-    // Tìm mã giáo viên lớn nhất hiện có
-    const lastTeacher = await Teacher.findOne()
-      .sort({ teacherCode: -1 })
-      .select("teacherCode");
-
-    if (!lastTeacher || !lastTeacher.teacherCode) {
-      return "GV001";
-    }
-
-    // Lấy số từ mã (VD: GV001 -> 001)
-    const lastNumber = parseInt(lastTeacher.teacherCode.substring(2));
-    const nextNumber = lastNumber + 1;
-
-    // Format lại thành GV + 3 chữ số (VD: GV002)
-    return `GV${nextNumber.toString().padStart(3, "0")}`;
-  };
-
   const results = {
     success: [],
     failed: [],
@@ -169,15 +189,6 @@ const importTeachers = async (file) => {
     const rowNumber = i + 2;
 
     try {
-      // Hàm helper để lấy giá trị từ row không phân biệt hoa thường
-      const getRowValue = (row, fieldName) => {
-        const key = Object.keys(row).find(
-          (k) => k.toLowerCase() === fieldName.toLowerCase()
-        );
-        return key ? row[key] : null;
-      };
-
-      // Lấy dữ liệu từ Excel (không phân biệt hoa thường)
       let teacherCode = getRowValue(row, "Mã GV");
       teacherCode = teacherCode ? teacherCode.toString().trim() : null;
 
@@ -187,7 +198,6 @@ const importTeachers = async (file) => {
       const subjectName = getRowValue(row, "Môn dạy");
       const className = getRowValue(row, "Lớp chủ nhiệm");
 
-      // Kiểm tra thông tin bắt buộc (phone không bắt buộc)
       if (!name || !email || !subjectName || !className) {
         results.failed.push({
           row: rowNumber,
@@ -198,11 +208,9 @@ const importTeachers = async (file) => {
         continue;
       }
 
-      // Nếu không có mã GV trong Excel, tạo tự động
       if (!teacherCode) {
         teacherCode = await generateTeacherCode();
       } else {
-        // Kiểm tra mã GV đã tồn tại chưa
         const existingCode = await Teacher.findOne({ teacherCode });
         if (existingCode) {
           results.failed.push({
@@ -214,7 +222,6 @@ const importTeachers = async (file) => {
         }
       }
 
-      // Kiểm tra số điện thoại (chỉ khi có phone)
       if (phone && phone.trim()) {
         const existingTeacher = await Teacher.findOne({ phone: phone.trim() });
         if (existingTeacher) {
@@ -227,7 +234,6 @@ const importTeachers = async (file) => {
         }
       }
 
-      // Xử lý User
       let user = await User.findOne({ email });
       if (!user) {
         user = await User.create({
@@ -248,8 +254,11 @@ const importTeachers = async (file) => {
         }
       }
 
-      // Kiểm tra Subject
-      const subject = await Subject.findOne({ name: subjectName.trim() });
+      const [subject, classInfo] = await Promise.all([
+        Subject.findOne({ name: subjectName.trim() }),
+        Class.findOne({ name: className.trim() }),
+      ]);
+
       if (!subject) {
         results.failed.push({
           row: rowNumber,
@@ -259,8 +268,6 @@ const importTeachers = async (file) => {
         continue;
       }
 
-      // Kiểm tra Class
-      const classInfo = await Class.findOne({ name: className.trim() });
       if (!classInfo) {
         results.failed.push({
           row: rowNumber,
@@ -270,7 +277,6 @@ const importTeachers = async (file) => {
         continue;
       }
 
-      // Tạo Teacher với teacherCode (phone có thể null)
       const teacher = await Teacher.create({
         teacherCode,
         name: name.trim(),

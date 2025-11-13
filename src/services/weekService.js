@@ -3,43 +3,62 @@ const Week = require("../models/weekModel");
 const getWeeks = async (filters = {}) => {
   const query = {};
 
+  if (filters.schoolYear) {
+    query.schoolYear = filters.schoolYear;
+  }
+
+  if (filters.weekNumber) {
+    query.weekNumber = filters.weekNumber;
+  }
+
   const weeks = await Week.find(query).sort({ weekNumber: 1 });
 
   return weeks;
 };
 
+const checkDateOverlap = (startDate, endDate, excludeId = null) => {
+  const query = {
+    $or: [
+      { startDate: { $lte: startDate }, endDate: { $gte: startDate } },
+      { startDate: { $lte: endDate }, endDate: { $gte: endDate } },
+      { startDate: { $gte: startDate }, endDate: { $lte: endDate } }
+    ]
+  };
+
+  if (excludeId) {
+    query._id = { $ne: excludeId };
+  }
+
+  return Week.findOne(query);
+};
+
 const createWeek = async (data) => {
   const { startDate, endDate } = data;
 
-  // Kiểm tra ngày kết thúc phải sau ngày bắt đầu
-  if (new Date(endDate) <= new Date(startDate)) {
+  if (!startDate || !endDate) {
+    throw new Error("Start date and end date are required");
+  }
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  if (end <= start) {
     throw new Error("End date must be after start date");
   }
 
-  // Kiểm tra trùng lặp khoảng thời gian
-  const overlappingWeek = await Week.findOne({
-    $or: [
-      // startDate nằm trong khoảng tuần đã có
-      { startDate: { $lte: new Date(startDate) }, endDate: { $gte: new Date(startDate) } },
-      // endDate nằm trong khoảng tuần đã có
-      { startDate: { $lte: new Date(endDate) }, endDate: { $gte: new Date(endDate) } },
-      // Tuần mới bao trùm tuần cũ
-      { startDate: { $gte: new Date(startDate) }, endDate: { $lte: new Date(endDate) } }
-    ]
-  });
+  const overlappingWeek = await checkDateOverlap(start, end);
 
   if (overlappingWeek) {
     throw new Error("Week period overlaps with existing week");
   }
 
-  // Tự động tính weekNumber (số tuần tiếp theo)
   const lastWeek = await Week.findOne().sort({ weekNumber: -1 });
   const weekNumber = lastWeek ? lastWeek.weekNumber + 1 : 1;
 
   const week = await Week.create({
     weekNumber,
-    startDate: new Date(startDate),
-    endDate: new Date(endDate),
+    startDate: start,
+    endDate: end,
   });
 
   return week;
@@ -53,31 +72,22 @@ const updateWeek = async (id, data) => {
 
   const { startDate, endDate } = data;
 
-  // Kiểm tra ngày kết thúc phải sau ngày bắt đầu
-  if (startDate && endDate && new Date(endDate) <= new Date(startDate)) {
-    throw new Error("End date must be after start date");
-  }
-
-  // Kiểm tra trùng lặp khoảng thời gian (ngoại trừ chính nó)
   const checkStartDate = startDate ? new Date(startDate) : week.startDate;
   const checkEndDate = endDate ? new Date(endDate) : week.endDate;
 
-  const overlappingWeek = await Week.findOne({
-    _id: { $ne: id },
-    $or: [
-      { startDate: { $lte: checkStartDate }, endDate: { $gte: checkStartDate } },
-      { startDate: { $lte: checkEndDate }, endDate: { $gte: checkEndDate } },
-      { startDate: { $gte: checkStartDate }, endDate: { $lte: checkEndDate } }
-    ]
-  });
+  if (checkEndDate <= checkStartDate) {
+    throw new Error("End date must be after start date");
+  }
+
+  const overlappingWeek = await checkDateOverlap(checkStartDate, checkEndDate, id);
 
   if (overlappingWeek) {
     throw new Error("Week period overlaps with existing week");
   }
 
   const updateData = {};
-  if (startDate) updateData.startDate = new Date(startDate);
-  if (endDate) updateData.endDate = new Date(endDate);
+  if (startDate) updateData.startDate = checkStartDate;
+  if (endDate) updateData.endDate = checkEndDate;
 
   const updatedWeek = await Week.findByIdAndUpdate(
     id,
@@ -89,18 +99,14 @@ const updateWeek = async (id, data) => {
 };
 
 const deleteWeek = async (id) => {
-  const week = await Week.findById(id);
+  const week = await Week.findByIdAndDelete(id);
+  
   if (!week) {
     throw new Error("Week not found");
   }
 
-  const deletedWeekNumber = week.weekNumber;
-
-  await Week.findByIdAndDelete(id);
-
-  // Tự động sắp xếp lại số tuần
   await Week.updateMany(
-    { weekNumber: { $gt: deletedWeekNumber } },
+    { weekNumber: { $gt: week.weekNumber } },
     { $inc: { weekNumber: -1 } }
   );
 

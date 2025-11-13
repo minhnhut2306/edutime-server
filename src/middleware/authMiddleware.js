@@ -1,4 +1,3 @@
-// middleware/authMiddleware.js
 const authenService = require("../services/authenService");
 const { unauthorizedResponse } = require("../helper/createResponse.helper");
 
@@ -12,25 +11,25 @@ const authMiddleware = async (req, res, next) => {
         .json(unauthorizedResponse("Token không được cung cấp hoặc không đúng định dạng"));
     }
 
-    const token = authHeader.replace("Bearer ", "");
+    const token = authHeader.substring(7);
 
     const tokenData = await authenService.verifyToken(token);
 
-    // Gắn userId vào request để sử dụng ở các controller
     req.userId = tokenData.userId;
     req.token = token;
 
     next();
   } catch (error) {
-    if (error.message === "Invalid token") {
-      return res.status(401).json(unauthorizedResponse("Token không hợp lệ"));
-    }
-    if (error.message === "Token expired") {
-      return res.status(401).json(unauthorizedResponse("Token đã hết hạn"));
-    }
+    const errorMessages = {
+      "Invalid token": "Token không hợp lệ",
+      "Token expired": "Token đã hết hạn"
+    };
+
+    const message = errorMessages[error.message] || "Xác thực thất bại";
+    
     return res
       .status(401)
-      .json(unauthorizedResponse("Xác thực thất bại", { error: error.message }));
+      .json(unauthorizedResponse(message, error.message === "Xác thực thất bại" ? { error: error.message } : undefined));
   }
 };
 

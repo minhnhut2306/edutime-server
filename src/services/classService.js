@@ -1,4 +1,3 @@
-// src/services/classService.js
 const Class = require("../models/classesModel");
 const XLSX = require("xlsx");
 
@@ -19,6 +18,10 @@ const getClasses = async (filters = {}) => {
 };
 
 const getClassById = async (id) => {
+  if (!id) {
+    throw new Error("Class ID is required");
+  }
+
   const classInfo = await Class.findById(id);
 
   if (!classInfo) {
@@ -31,31 +34,58 @@ const getClassById = async (id) => {
 const createClass = async (data) => {
   const { name, grade, studentCount } = data;
 
-  const existingClass = await Class.findOne({ name });
+  if (!name || !grade) {
+    throw new Error("Class name and grade are required");
+  }
+
+  const trimmedName = name.toString().trim();
+
+  if (!trimmedName) {
+    throw new Error("Class name cannot be empty");
+  }
+
+  const existingClass = await Class.findOne({ name: trimmedName });
   if (existingClass) {
     throw new Error("Class name already exists");
   }
 
   const classInfo = await Class.create({
-    name,
-    grade,
-    studentCount: studentCount || 0,
+    name: trimmedName,
+    grade: grade.toString().trim(),
+    studentCount: studentCount ? parseInt(studentCount) : 0,
   });
 
   return classInfo;
 };
 
 const updateClass = async (id, data) => {
+  if (!id) {
+    throw new Error("Class ID is required");
+  }
+
   const classInfo = await Class.findById(id);
   if (!classInfo) {
     throw new Error("Class not found");
   }
 
-  if (data.name && data.name !== classInfo.name) {
-    const existingClass = await Class.findOne({ name: data.name });
-    if (existingClass) {
-      throw new Error("Class name already exists");
+  if (data.name) {
+    const trimmedName = data.name.toString().trim();
+    
+    if (!trimmedName) {
+      throw new Error("Class name cannot be empty");
     }
+
+    if (trimmedName !== classInfo.name) {
+      const existingClass = await Class.findOne({ name: trimmedName });
+      if (existingClass) {
+        throw new Error("Class name already exists");
+      }
+      data.name = trimmedName;
+    }
+  }
+
+  if (data.grade) {
+    data.grade = data.grade.toString().trim();
   }
 
   const updatedClass = await Class.findByIdAndUpdate(
@@ -68,6 +98,10 @@ const updateClass = async (id, data) => {
 };
 
 const deleteClass = async (id) => {
+  if (!id) {
+    throw new Error("Class ID is required");
+  }
+
   const classInfo = await Class.findById(id);
   if (!classInfo) {
     throw new Error("Class not found");
@@ -84,6 +118,13 @@ const deleteClass = async (id) => {
   };
 };
 
+const getRowValue = (row, fieldName) => {
+  const key = Object.keys(row).find(
+    (k) => k.toLowerCase() === fieldName.toLowerCase()
+  );
+  return key ? row[key] : null;
+};
+
 const importClasses = async (file) => {
   if (!file) {
     throw new Error("No file uploaded");
@@ -97,14 +138,6 @@ const importClasses = async (file) => {
   if (data.length === 0) {
     throw new Error("Excel file is empty");
   }
-
-  // Hàm helper để lấy giá trị từ row không phân biệt hoa thường
-  const getRowValue = (row, fieldName) => {
-    const key = Object.keys(row).find(
-      (k) => k.toLowerCase() === fieldName.toLowerCase()
-    );
-    return key ? row[key] : null;
-  };
 
   const results = {
     success: [],
@@ -120,7 +153,6 @@ const importClasses = async (file) => {
       const grade = getRowValue(row, "Khối");
       const studentCount = getRowValue(row, "Sĩ số");
 
-      // Kiểm tra thông tin bắt buộc
       if (!name || !grade) {
         results.failed.push({
           row: rowNumber,
@@ -130,20 +162,29 @@ const importClasses = async (file) => {
         continue;
       }
 
-      // Kiểm tra tên lớp đã tồn tại
-      const existingClass = await Class.findOne({ name: name.toString().trim() });
-      if (existingClass) {
+      const trimmedName = name.toString().trim();
+
+      if (!trimmedName) {
         results.failed.push({
           row: rowNumber,
           data: row,
-          reason: `Tên lớp "${name}" đã tồn tại`,
+          reason: "Tên lớp không được để trống",
         });
         continue;
       }
 
-      // Tạo lớp mới
+      const existingClass = await Class.findOne({ name: trimmedName });
+      if (existingClass) {
+        results.failed.push({
+          row: rowNumber,
+          data: row,
+          reason: `Tên lớp "${trimmedName}" đã tồn tại`,
+        });
+        continue;
+      }
+
       const classInfo = await Class.create({
-        name: name.toString().trim(),
+        name: trimmedName,
         grade: grade.toString().trim(),
         studentCount: studentCount ? parseInt(studentCount) : 0,
       });

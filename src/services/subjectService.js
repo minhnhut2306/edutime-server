@@ -8,31 +8,31 @@ const getSubjects = async (filters = {}) => {
   }
 
   const subjects = await Subject.find(query).sort({ createdAt: -1 });
-
   return subjects;
 };
 
 const createSubject = async (data) => {
   const { name } = data;
-
-  const existingSubject = await Subject.findOne({ name });
+  if (!name || name.trim() === "") {
+    throw new Error("Subject name is required");
+  }
+  const existingSubject = await Subject.findOne({ 
+    name: { $regex: `^${name.trim()}$`, $options: "i" } 
+  });
+  
   if (existingSubject) {
     throw new Error("Subject name already exists");
   }
 
-  const subject = await Subject.create({ name });
-
+  const subject = await Subject.create({ name: name.trim() });
   return subject;
 };
 
 const deleteSubject = async (id) => {
-  const subject = await Subject.findById(id);
+  const subject = await Subject.findByIdAndDelete(id);
   if (!subject) {
     throw new Error("Subject not found");
   }
-
-  await Subject.findByIdAndDelete(id);
-
   return {
     message: "Subject deleted successfully",
     deletedSubject: {

@@ -1,15 +1,14 @@
-// authenservices
-
-
 const User = require("../models/userModel");
-const bcrypt = require("bcrypt");
 const Token = require("../models/tokenModel");
 const crypto = require("crypto");
-const validator = require("../validations/authen.validation")
-
+const validator = require("../validations/authen.validation");
 
 const login = async (email, password) => {
-  const user = await User.findOne({ email });
+  if (!email || !password) {
+    throw new Error("Email and password are required");
+  }
+
+  const user = await User.findOne({ email: email.toLowerCase().trim() });
   if (!user) {
     throw new Error("User not found");
   }
@@ -20,6 +19,7 @@ const login = async (email, password) => {
   }
 
   await Token.deleteMany({ userId: user._id });
+
   const token = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
@@ -36,41 +36,56 @@ const login = async (email, password) => {
 };
 
 const register = async (email, password) => {
-    if (!email || email.trim() === '') {
-        throw new Error("Email is required");
-    }
-    
-    if (!validator.isEmail(email)) {
-        throw new Error("Invalid email format");
-    }
+  if (!email || email.trim() === "") {
+    throw new Error("Email is required");
+  }
 
-    if (!password) {
-        throw new Error("Password is required");
-    }
-    
-    if (!validator.isValidPassword(password)) {
-        throw new Error("Password must be at least 8 characters and contain special characters");
-    }
-    
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
-    if (user) {
-        throw new Error("User already exists");
-    }
+  const normalizedEmail = email.toLowerCase().trim();
 
-    const newUser = await User.create({
-        email: email.toLowerCase().trim(),
-        password,
-    });
+  if (!validator.isEmail(normalizedEmail)) {
+    throw new Error("Invalid email format");
+  }
 
-    return newUser;
+  if (!password) {
+    throw new Error("Password is required");
+  }
+
+  if (!validator.isValidPassword(password)) {
+    throw new Error("Password must be at least 8 characters and contain special characters");
+  }
+
+  const existingUser = await User.findOne({ email: normalizedEmail });
+  if (existingUser) {
+    throw new Error("User already exists");
+  }
+
+  const newUser = await User.create({
+    email: normalizedEmail,
+    password,
+  });
+
+  return newUser;
 };
 
 const logout = async (token) => {
-  await Token.deleteOne({ token });
+  if (!token) {
+    throw new Error("Token is required");
+  }
+
+  const result = await Token.deleteOne({ token });
+  
+  if (result.deletedCount === 0) {
+    throw new Error("Invalid token");
+  }
+
   return { message: "Logout successful" };
 };
 
 const verifyToken = async (token) => {
+  if (!token) {
+    throw new Error("Token is required");
+  }
+
   const tokenData = await Token.findOne({ token });
   if (!tokenData) {
     throw new Error("Invalid token");
@@ -85,9 +100,18 @@ const verifyToken = async (token) => {
 };
 
 const refreshToken = async (token) => {
+  if (!token) {
+    throw new Error("Token is required");
+  }
+
   const tokenData = await Token.findOne({ token });
   if (!tokenData) {
     throw new Error("Invalid token");
+  }
+
+  if (tokenData.expiresAt && tokenData.expiresAt < new Date()) {
+    await Token.deleteOne({ token });
+    throw new Error("Token expired");
   }
 
   const newToken = crypto.randomBytes(32).toString("hex");
@@ -104,48 +128,73 @@ const refreshToken = async (token) => {
 };
 
 const revokeToken = async (token) => {
-  await Token.deleteOne({ token });
+  if (!token) {
+    throw new Error("Token is required");
+  }
+
+  const result = await Token.deleteOne({ token });
+  
+  if (result.deletedCount === 0) {
+    throw new Error("Invalid token");
+  }
+
   return { message: "Token revoked" };
 };
 
 const getUser = async (userId) => {
-  const user = await User.findById(userId);
+  if (!userId) {
+    throw new Error("User ID is required");
+  }
+
+  const user = await User.findById(userId).select("-password");
   if (!user) {
     throw new Error("User not found");
   }
+
   return user;
 };
 
 const changePassword = async (userId, newPassword) => {
-    const user = await User.findById(userId);
-    if (!user) {
-        throw new Error("User not found");
-    }
-    
-    user.password = newPassword;
-    await user.save();
-    
-    await Token.deleteMany({ userId: user._id });
-    
-    return { message: "Password changed successfully" };
-};
+  if (!userId) {
+    throw new Error("User ID is required");
+  }
 
-const deleteUser = async (userId) => {
-  // Kiểm tra user tồn tại
+  if (!newPassword) {
+    throw new Error("New password is required");
+  }
+
+  if (!validator.isValidPassword(newPassword)) {
+    throw new Error("Password must be at least 8 characters and contain special characters");
+  }
+
   const user = await User.findById(userId);
   if (!user) {
     throw new Error("User not found");
   }
 
-  // Xóa tất cả token của user
+  user.password = newPassword;
+  await user.save();
+
   await Token.deleteMany({ userId: user._id });
 
-  // Xóa user
+  return { message: "Password changed successfully" };
+};
+
+const deleteUser = async (userId) => {
+  if (!userId) {
+    throw new Error("User ID is required");
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  await Token.deleteMany({ userId: user._id });
   await User.findByIdAndDelete(userId);
 
   return { message: "User deleted successfully" };
 };
-
 
 module.exports = {
   login,
