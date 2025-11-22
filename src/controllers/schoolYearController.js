@@ -10,7 +10,7 @@ const {
 
 const getSchoolYears = asyncHandler(async (req, res) => {
   const years = await schoolYearService.getSchoolYears();
-  return res.status(200).json(successResponse('Lấy danh sách năm học thành công', { years }));
+  return res.status(200).json(successResponse('Lấy danh sách năm học thành công', { schoolYears: years }));
 });
 
 const getActiveSchoolYear = asyncHandler(async (req, res) => {
@@ -20,7 +20,7 @@ const getActiveSchoolYear = asyncHandler(async (req, res) => {
     return res.status(404).json(notFoundResponse('Không có năm học đang hoạt động'));
   }
 
-  return res.status(200).json(successResponse('Lấy năm học active thành công', { schoolYear: activeYear }));
+  return res.status(200).json(successResponse('Lấy năm học active thành công', activeYear));
 });
 
 const getSchoolYearData = asyncHandler(async (req, res) => {
@@ -31,11 +31,16 @@ const getSchoolYearData = asyncHandler(async (req, res) => {
     return res.status(404).json(notFoundResponse('Không tìm thấy năm học'));
   }
 
-  return res.status(200).json(successResponse('Lấy dữ liệu năm học thành công', { schoolYear: data }));
+  return res.status(200).json(successResponse('Lấy dữ liệu năm học thành công', data));
 });
 
 const createSchoolYear = asyncHandler(async (req, res) => {
   const { year } = req.body;
+
+  // Kiểm tra quyền admin
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json(forbiddenResponse('Chỉ Admin mới có quyền tạo năm học'));
+  }
 
   if (!year) {
     return res.status(400).json(badRequestResponse('Vui lòng cung cấp năm học'));
@@ -55,26 +60,25 @@ const createSchoolYear = asyncHandler(async (req, res) => {
     );
   }
 
-  if (req.user?.role !== 'admin') {
-    return res.status(403).json(forbiddenResponse('Chỉ Admin mới có quyền tạo năm học'));
-  }
-
   const schoolYear = await schoolYearService.createSchoolYear(year);
 
-  return res.status(201).json(createdResponse('Tạo năm học thành công', { schoolYear }));
+  return res.status(201).json(createdResponse('Tạo năm học thành công', schoolYear));
 });
 
 const finishSchoolYear = asyncHandler(async (req, res) => {
-  const { currentYear } = req.body;
-
-  if (!currentYear) {
-    return res.status(400).json(badRequestResponse('Vui lòng cung cấp năm học hiện tại'));
-  }
-
+  // Kiểm tra quyền admin
   if (req.user?.role !== 'admin') {
     return res.status(403).json(forbiddenResponse('Chỉ Admin mới có quyền kết thúc năm học'));
   }
 
+  // Lấy năm học active hiện tại
+  const activeYear = await schoolYearService.getActiveSchoolYear();
+  
+  if (!activeYear) {
+    return res.status(404).json(notFoundResponse('Không có năm học đang hoạt động'));
+  }
+
+  const currentYear = activeYear.year;
   const result = await schoolYearService.finishSchoolYear(currentYear);
 
   return res.status(200).json(
@@ -88,6 +92,7 @@ const finishSchoolYear = asyncHandler(async (req, res) => {
 const deleteSchoolYear = asyncHandler(async (req, res) => {
   const { year } = req.params;
 
+  // Kiểm tra quyền admin
   if (req.user?.role !== 'admin') {
     return res.status(403).json(forbiddenResponse('Chỉ Admin mới có quyền xóa năm học'));
   }

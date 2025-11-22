@@ -7,11 +7,11 @@ const TeachingRecord = require('../models/teachingRecordsModel');
 
 class SchoolYearService {
   async getSchoolYears() {
-    const years = await SchoolYear.find({}, { year: 1 })
+    const years = await SchoolYear.find()
       .sort({ year: -1 })
       .lean();
     
-    return years.map(y => y.year);
+    return years; // Trả về array objects có {year, status, ...}
   }
 
   async getSchoolYearData(year) {
@@ -71,7 +71,7 @@ class SchoolYearService {
 
     const newSchoolYear = await this.createSchoolYear(newYear);
 
-    const copyWithNewYear = (items, Model) => {
+    const copyWithNewYear = (items) => {
       return items.map(item => {
         const { _id, __v, ...rest } = item;
         return {
@@ -83,9 +83,9 @@ class SchoolYearService {
     };
 
     const [newTeachers, newClasses, newSubjects] = await Promise.all([
-      Teacher.insertMany(copyWithNewYear(teachers, Teacher)),
-      Class.insertMany(copyWithNewYear(classes, Class)),
-      Subject.insertMany(copyWithNewYear(subjects, Subject))
+      Teacher.insertMany(copyWithNewYear(teachers)),
+      Class.insertMany(copyWithNewYear(classes)),
+      Subject.insertMany(copyWithNewYear(subjects))
     ]);
 
     newSchoolYear.teachers = newTeachers.map(t => t._id);
