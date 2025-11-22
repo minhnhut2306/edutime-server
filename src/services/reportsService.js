@@ -5,6 +5,12 @@ const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
 const ExcelJS = require("exceljs");
 
+/**
+ * Tính số BC từ ngày dựa trên tháng bắt đầu năm học
+ * @param {Date} date - Ngày cần tính
+ * @param {number} schoolYearStartMonth - Tháng bắt đầu năm học (mặc định 9)
+ * @returns {object} - Thông tin BC
+ */
 const getBCFromDate = (date, schoolYearStartMonth = 9) => {
   const month = new Date(date).getMonth() + 1;
   let bcNumber;
@@ -21,12 +27,21 @@ const getBCFromDate = (date, schoolYearStartMonth = 9) => {
   };
 };
 
+/**
+ * Nhóm các records theo BC
+ * @param {Array} records - Mảng teaching records
+ * @param {number} schoolYearStartMonth - Tháng bắt đầu năm học
+ * @returns {object} - Object chứa các BC groups
+ */
 const groupRecordsByBC = (records, schoolYearStartMonth = 9) => {
   const bcGroups = {};
+  
   records.forEach(record => {
     if (!record.weekId?.startDate) return;
+    
     const bcInfo = getBCFromDate(record.weekId.startDate, schoolYearStartMonth);
     const bcNumber = bcInfo.bcNumber;
+    
     if (!bcGroups[bcNumber]) {
       bcGroups[bcNumber] = {
         bcNumber,
@@ -39,6 +54,7 @@ const groupRecordsByBC = (records, schoolYearStartMonth = 9) => {
         records: []
       };
     }
+    
     const weekNum = record.weekId.weekNumber;
     if (!bcGroups[bcNumber].weekNumbers.has(weekNum)) {
       bcGroups[bcNumber].weekNumbers.add(weekNum);
@@ -48,15 +64,71 @@ const groupRecordsByBC = (records, schoolYearStartMonth = 9) => {
         endDate: record.weekId.endDate
       });
     }
+    
     bcGroups[bcNumber].records.push(record);
   });
+  
+  // Sắp xếp weeks và xóa weekNumbers Set
   Object.values(bcGroups).forEach(bc => {
     bc.weeks.sort((a, b) => a.weekNumber - b.weekNumber);
     delete bc.weekNumbers;
   });
+  
   return bcGroups;
 };
 
+/**
+ * Tính toán thống kê từ records
+ * @param {Array} records - Mảng teaching records
+ * @param {string} type - Loại thống kê
+ * @returns {object} - Object chứa thống kê
+ */
+const calculateStatistics = (records, type) => {
+  const stats = {
+    totalPeriods: 0,
+    totalRecords: records.length,
+    bySubject: {},
+    byClass: {},
+    byWeek: {},
+  };
+
+  records.forEach((record) => {
+    stats.totalPeriods += record.periods;
+    
+    // Thống kê theo môn học
+    const subjectName = record.subjectId?.name || "Unknown";
+    if (!stats.bySubject[subjectName]) {
+      stats.bySubject[subjectName] = { count: 0, periods: 0 };
+    }
+    stats.bySubject[subjectName].count++;
+    stats.bySubject[subjectName].periods += record.periods;
+    
+    // Thống kê theo lớp
+    const className = record.classId?.name || "Unknown";
+    if (!stats.byClass[className]) {
+      stats.byClass[className] = { count: 0, periods: 0 };
+    }
+    stats.byClass[className].count++;
+    stats.byClass[className].periods += record.periods;
+    
+    // Thống kê theo tuần
+    const weekNumber = record.weekId?.weekNumber || 0;
+    if (!stats.byWeek[weekNumber]) {
+      stats.byWeek[weekNumber] = { count: 0, periods: 0 };
+    }
+    stats.byWeek[weekNumber].count++;
+    stats.byWeek[weekNumber].periods += record.periods;
+  });
+
+  return stats;
+};
+
+/**
+ * Lấy báo cáo giáo viên theo BC
+ * @param {string} teacherId - ID giáo viên
+ * @param {string} schoolYear - Năm học
+ * @param {number} bcNumber - Số BC (1-12)
+ */
 const getBCReport = async (teacherId, schoolYear, bcNumber) => {
   try {
     const teacher = await Teacher.findById(teacherId);
@@ -68,6 +140,7 @@ const getBCReport = async (teacherId, schoolYear, bcNumber) => {
       };
     }
 
+    // Lấy tất cả records trong năm học
     const allRecords = await TeachingRecords.find({
       teacherId,
       schoolYear
@@ -85,13 +158,15 @@ const getBCReport = async (teacherId, schoolYear, bcNumber) => {
       };
     }
 
+    // Nhóm theo BC
     const bcGroups = groupRecordsByBC(allRecords);
     const bcData = bcGroups[bcNumber];
+    
     if (!bcData) {
       return {
         success: false,
         statusCode: 404,
-        message: `Không có dữ liệu cho ${bcNumber}`,
+        message: `Không có dữ liệu cho BC ${bcNumber}`,
       };
     }
 
@@ -127,6 +202,11 @@ const getBCReport = async (teacherId, schoolYear, bcNumber) => {
   }
 };
 
+/**
+ * Lấy báo cáo tất cả BC trong năm
+ * @param {string} teacherId - ID giáo viên
+ * @param {string} schoolYear - Năm học
+ */
 const getAllBCReport = async (teacherId, schoolYear) => {
   try {
     const teacher = await Teacher.findById(teacherId);
@@ -157,6 +237,7 @@ const getAllBCReport = async (teacherId, schoolYear) => {
 
     const bcGroups = groupRecordsByBC(records);
 
+    // Tính thống kê cho từng BC
     Object.keys(bcGroups).forEach(bcNum => {
       bcGroups[bcNum].statistics = calculateStatistics(
         bcGroups[bcNum].records,
@@ -164,6 +245,7 @@ const getAllBCReport = async (teacherId, schoolYear) => {
       );
     });
 
+    // Sắp xếp BC theo thứ tự
     const sortedBCGroups = Object.keys(bcGroups)
       .sort((a, b) => parseInt(a) - parseInt(b))
       .reduce((acc, key) => {
@@ -196,6 +278,137 @@ const getAllBCReport = async (teacherId, schoolYear) => {
   }
 };
 
+/**
+ * Lấy báo cáo giáo viên theo loại (month/week/semester/year)
+ * @param {string} teacherId - ID giáo viên
+ * @param {string} type - Loại báo cáo
+ * @param {object} filters - Các filter
+ */
+const getTeacherReport = async (teacherId, type, filters = {}) => {
+  try {
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) {
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không tìm thấy giáo viên",
+      };
+    }
+
+    let query = { teacherId };
+    
+    // Build query theo type
+    if (filters.schoolYear) {
+      query.schoolYear = filters.schoolYear;
+    }
+
+    let records;
+    
+    switch (type) {
+      case 'month':
+        if (!filters.month || !filters.schoolYear) {
+          return {
+            success: false,
+            statusCode: 400,
+            message: "Thiếu month hoặc schoolYear",
+          };
+        }
+        
+        // Tìm các tuần trong tháng này
+        const monthWeeks = await Week.find({
+          schoolYear: filters.schoolYear,
+          month: parseInt(filters.month)
+        });
+        
+        const monthWeekIds = monthWeeks.map(w => w._id);
+        query.weekId = { $in: monthWeekIds };
+        break;
+        
+      case 'week':
+        if (!filters.weekId) {
+          return {
+            success: false,
+            statusCode: 400,
+            message: "Thiếu weekId",
+          };
+        }
+        query.weekId = filters.weekId;
+        break;
+        
+      case 'semester':
+        if (!filters.semester || !filters.schoolYear) {
+          return {
+            success: false,
+            statusCode: 400,
+            message: "Thiếu semester hoặc schoolYear",
+          };
+        }
+        
+        const semesterWeeks = await Week.find({
+          schoolYear: filters.schoolYear,
+          semester: parseInt(filters.semester)
+        });
+        
+        const semesterWeekIds = semesterWeeks.map(w => w._id);
+        query.weekId = { $in: semesterWeekIds };
+        break;
+        
+      case 'year':
+        // Chỉ cần schoolYear trong query
+        break;
+        
+      default:
+        return {
+          success: false,
+          statusCode: 400,
+          message: "Type không hợp lệ",
+        };
+    }
+
+    records = await TeachingRecords.find(query)
+      .populate("weekId", "weekNumber startDate endDate semester month")
+      .populate("subjectId", "name code")
+      .populate("classId", "name grade")
+      .sort({ "weekId.weekNumber": 1 });
+
+    if (records.length === 0) {
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không có dữ liệu giảng dạy",
+      };
+    }
+
+    const statistics = calculateStatistics(records, type);
+
+    return {
+      success: true,
+      data: {
+        teacher: {
+          id: teacher._id,
+          name: teacher.name,
+          email: teacher.email,
+        },
+        type,
+        filters,
+        records,
+        statistics,
+      },
+    };
+  } catch (error) {
+    console.error("Error in getTeacherReport:", error);
+    return {
+      success: false,
+      statusCode: 500,
+      message: "Lỗi khi tạo báo cáo",
+      error: error.message,
+    };
+  }
+};
+
+/**
+ * Xuất Excel báo cáo BC
+ */
 const exportBCReport = async (teacherId, schoolYear, bcNumber) => {
   try {
     const reportData = await getBCReport(teacherId, schoolYear, bcNumber);
@@ -221,6 +434,9 @@ const exportBCReport = async (teacherId, schoolYear, bcNumber) => {
   }
 };
 
+/**
+ * Xuất Excel tất cả BC trong năm
+ */
 const exportAllBCReport = async (teacherId, schoolYear) => {
   try {
     const reportData = await getAllBCReport(teacherId, schoolYear);
@@ -246,46 +462,230 @@ const exportAllBCReport = async (teacherId, schoolYear) => {
   }
 };
 
-const calculateStatistics = (records, type) => {
-  const stats = {
-    totalPeriods: 0,
-    totalRecords: records.length,
-    bySubject: {},
-    byClass: {},
-    byWeek: {},
-  };
+/**
+ * Xuất Excel báo cáo tháng
+ */
+const exportMonthReport = async (teacherId, schoolYear, month) => {
+  try {
+    const reportData = await getTeacherReport(teacherId, 'month', { 
+      schoolYear, 
+      month 
+    });
 
-  records.forEach((record) => {
-    stats.totalPeriods += record.periods;
-    const subjectName = record.subjectId?.name || "Unknown";
-    if (!stats.bySubject[subjectName]) {
-      stats.bySubject[subjectName] = { count: 0, periods: 0 };
+    if (!reportData.success) {
+      return reportData;
     }
-    stats.bySubject[subjectName].count++;
-    stats.bySubject[subjectName].periods += record.periods;
-    const className = record.classId?.name || "Unknown";
-    if (!stats.byClass[className]) {
-      stats.byClass[className] = { count: 0, periods: 0 };
-    }
-    stats.byClass[className].count++;
-    stats.byClass[className].periods += record.periods;
-    const weekNumber = record.weekId?.weekNumber || 0;
-    if (!stats.byWeek[weekNumber]) {
-      stats.byWeek[weekNumber] = { count: 0, periods: 0 };
-    }
-    stats.byWeek[weekNumber].count++;
-    stats.byWeek[weekNumber].periods += record.periods;
-  });
 
-  return stats;
+    const workbook = new ExcelJS.Workbook();
+    // TODO: Implement month report worksheet
+    // createMonthWorksheet(workbook, reportData.data);
+
+    return {
+      success: true,
+      data: { workbook },
+    };
+  } catch (error) {
+    console.error("Error in exportMonthReport:", error);
+    return {
+      success: false,
+      statusCode: 500,
+      message: "Lỗi khi xuất báo cáo tháng Excel",
+      error: error.message,
+    };
+  }
 };
 
+/**
+ * Xuất Excel báo cáo tuần
+ */
+const exportWeekReport = async (teacherId, weekId) => {
+  try {
+    const reportData = await getTeacherReport(teacherId, 'week', { weekId });
+
+    if (!reportData.success) {
+      return reportData;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    // TODO: Implement week report worksheet
+    // createWeekWorksheet(workbook, reportData.data);
+
+    return {
+      success: true,
+      data: { workbook },
+    };
+  } catch (error) {
+    console.error("Error in exportWeekReport:", error);
+    return {
+      success: false,
+      statusCode: 500,
+      message: "Lỗi khi xuất báo cáo tuần Excel",
+      error: error.message,
+    };
+  }
+};
+
+/**
+ * Xuất Excel báo cáo nhiều tuần (group theo BC)
+ */
+const exportWeekRangeReport = async (teacherId, weekIds) => {
+  try {
+    if (!Array.isArray(weekIds) || weekIds.length === 0) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "weekIds phải là mảng không rỗng",
+      };
+    }
+
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) {
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không tìm thấy giáo viên",
+      };
+    }
+
+    // Lấy records của các tuần được chọn
+    const records = await TeachingRecords.find({
+      teacherId,
+      weekId: { $in: weekIds }
+    })
+      .populate("weekId", "weekNumber startDate endDate semester")
+      .populate("subjectId", "name code")
+      .populate("classId", "name grade")
+      .sort({ "weekId.weekNumber": 1 });
+
+    if (records.length === 0) {
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không có dữ liệu cho các tuần đã chọn",
+      };
+    }
+
+    // Group theo BC
+    const bcGroups = groupRecordsByBC(records);
+    
+    // Tạo workbook với nhiều sheet (mỗi BC 1 sheet)
+    const workbook = new ExcelJS.Workbook();
+    Object.values(bcGroups).forEach(bcData => {
+      const bcReportData = {
+        teacher: {
+          id: teacher._id,
+          name: teacher.name,
+          email: teacher.email,
+        },
+        bcName: bcData.bcName,
+        bcNumber: bcData.bcNumber,
+        monthName: bcData.monthName,
+        month: bcData.month,
+        schoolYear: records[0].schoolYear,
+        weeks: bcData.weeks,
+        records: bcData.records,
+        statistics: calculateStatistics(bcData.records, 'bc')
+      };
+      createBCWorksheet(workbook, bcReportData);
+    });
+
+    return {
+      success: true,
+      data: { 
+        workbook,
+        bcInfo: Object.values(bcGroups).map(bc => ({
+          bcNumber: bc.bcNumber,
+          bcName: bc.bcName,
+          weeks: bc.weeks
+        }))
+      },
+    };
+  } catch (error) {
+    console.error("Error in exportWeekRangeReport:", error);
+    return {
+      success: false,
+      statusCode: 500,
+      message: "Lỗi khi xuất báo cáo nhiều tuần Excel",
+      error: error.message,
+    };
+  }
+};
+
+/**
+ * Xuất Excel báo cáo học kỳ
+ */
+const exportSemesterReport = async (teacherId, schoolYear, semester) => {
+  try {
+    const reportData = await getTeacherReport(teacherId, 'semester', { 
+      schoolYear, 
+      semester 
+    });
+
+    if (!reportData.success) {
+      return reportData;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    // TODO: Implement semester report worksheet
+    // createSemesterWorksheet(workbook, reportData.data);
+
+    return {
+      success: true,
+      data: { workbook },
+    };
+  } catch (error) {
+    console.error("Error in exportSemesterReport:", error);
+    return {
+      success: false,
+      statusCode: 500,
+      message: "Lỗi khi xuất báo cáo học kỳ Excel",
+      error: error.message,
+    };
+  }
+};
+
+/**
+ * Xuất Excel báo cáo năm
+ */
+const exportYearReport = async (teacherId, schoolYear) => {
+  try {
+    const reportData = await getTeacherReport(teacherId, 'year', { schoolYear });
+
+    if (!reportData.success) {
+      return reportData;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    // TODO: Implement year report worksheet
+    // createYearWorksheet(workbook, reportData.data);
+
+    return {
+      success: true,
+      data: { workbook },
+    };
+  } catch (error) {
+    console.error("Error in exportYearReport:", error);
+    return {
+      success: false,
+      statusCode: 500,
+      message: "Lỗi khi xuất báo cáo năm Excel",
+      error: error.message,
+    };
+  }
+};
+
+/**
+ * Tạo Excel workbook cho báo cáo BC
+ */
 const createBCExcelReport = async (data) => {
   const workbook = new ExcelJS.Workbook();
   createBCWorksheet(workbook, data);
   return workbook;
 };
 
+/**
+ * Tạo Excel workbook cho tất cả BC
+ */
 const createAllBCExcelReport = async (data) => {
   const workbook = new ExcelJS.Workbook();
   Object.values(data.bcGroups).forEach(bcData => {
@@ -305,11 +705,15 @@ const createAllBCExcelReport = async (data) => {
   return workbook;
 };
 
+/**
+ * Tạo worksheet cho BC trong Excel
+ */
 const createBCWorksheet = (workbook, data) => {
   const worksheet = workbook.addWorksheet(data.bcName);
 
   const { bcName, monthName, schoolYear, weeks } = data;
 
+  // Header
   worksheet.mergeCells("A1:K1");
   worksheet.getCell("A1").value = "SỞ GD&ĐT TỈNH VĨNH LONG";
   worksheet.getCell("A1").font = { bold: true, size: 11 };
@@ -330,6 +734,7 @@ const createBCWorksheet = (workbook, data) => {
   worksheet.getCell("A5").font = { bold: true, size: 11 };
   worksheet.getCell("A5").alignment = { horizontal: "center" };
 
+  // Thông tin giáo viên
   worksheet.getCell("A7").value = `Họ và tên giáo viên: ${data.teacher.name}`;
   worksheet.getCell("A7").font = { bold: true };
 
@@ -351,11 +756,13 @@ const createBCWorksheet = (workbook, data) => {
   worksheet.getCell("A15").value = "Tổng công số tiết kiểm nhiệm/tuần: ..... tiết.";
   worksheet.getCell("A15").font = { bold: true };
 
+  // Table header
   const headerRow = 17;
   worksheet.mergeCells(`A${headerRow}:A${headerRow + 1}`);
   worksheet.getCell(`A${headerRow}`).value = "TT";
   worksheet.mergeCells(`B${headerRow}:B${headerRow + 1}`);
   worksheet.getCell(`B${headerRow}`).value = "Phân công";
+  
   const numWeeks = weeks.length;
   const lastWeekCol = String.fromCharCode(67 + numWeeks - 1);
 
@@ -392,6 +799,8 @@ const createBCWorksheet = (workbook, data) => {
   worksheet.getCell(`${col6}${headerRow}`).value = "Phụ chú";
 
   const totalCols = 2 + numWeeks + 6;
+  
+  // Style header
   for (let col = 1; col <= totalCols; col++) {
     for (let row = headerRow; row <= headerRow + 1; row++) {
       const cell = worksheet.getCell(row, col);
@@ -406,6 +815,7 @@ const createBCWorksheet = (workbook, data) => {
     }
   }
 
+  // Data rows
   let rowIndex = headerRow + 2;
   const groupedByClass = {};
   data.records.forEach((record) => {
@@ -421,21 +831,26 @@ const createBCWorksheet = (workbook, data) => {
     const row = worksheet.getRow(rowIndex);
     row.getCell(1).value = stt++;
     row.getCell(2).value = className;
+    
     const weeklyPeriods = {};
     weeks.forEach(week => {
       weeklyPeriods[week.weekNumber] = 0;
     });
+    
     records.forEach((r) => {
       const weekNum = r.weekId?.weekNumber;
       if (weeklyPeriods.hasOwnProperty(weekNum)) {
         weeklyPeriods[weekNum] += r.periods;
       }
     });
+    
     weeks.forEach((week, index) => {
       row.getCell(3 + index).value = weeklyPeriods[week.weekNumber] || 0;
     });
+    
     const totalClassPeriods = records.reduce((sum, r) => sum + r.periods, 0);
     row.getCell(3 + numWeeks).value = totalClassPeriods;
+    
     for (let col = 1; col <= totalCols; col++) {
       const cell = row.getCell(col);
       cell.border = {
@@ -451,12 +866,14 @@ const createBCWorksheet = (workbook, data) => {
     rowIndex++;
   });
 
+  // Các môn khác
   const otherSubjects = ["Khối 11", "Khối 10", "TH-HN 1", "TH-HN 2", "TH-HN 3", "Kiểm nhiệm", "Coi thi"];
   otherSubjects.forEach((subject) => {
     const row = worksheet.getRow(rowIndex);
     row.getCell(1).value = stt++;
     row.getCell(2).value = subject;
     row.getCell(3 + numWeeks).value = 0;
+    
     for (let col = 1; col <= totalCols; col++) {
       const cell = row.getCell(col);
       cell.border = {
@@ -469,13 +886,16 @@ const createBCWorksheet = (workbook, data) => {
     rowIndex++;
   });
 
+  // Tổng cộng
   const totalRow = worksheet.getRow(rowIndex);
   totalRow.getCell(1).value = "Tổng cộng";
   totalRow.getCell(2).value = "";
+  
   const weekTotals = {};
   weeks.forEach(week => {
     weekTotals[week.weekNumber] = 0;
   });
+  
   data.records.forEach((r) => {
     const weekNum = r.weekId?.weekNumber;
     if (weekTotals.hasOwnProperty(weekNum)) {
@@ -491,6 +911,7 @@ const createBCWorksheet = (workbook, data) => {
   totalRow.getCell(3 + numWeeks + 1).value = 68;
   totalRow.getCell(3 + numWeeks + 2).value = -32;
   totalRow.font = { bold: true };
+  
   for (let col = 1; col <= totalCols; col++) {
     const cell = totalRow.getCell(col);
     cell.border = {
@@ -504,6 +925,7 @@ const createBCWorksheet = (workbook, data) => {
     }
   }
 
+  // Footer
   rowIndex += 2;
   worksheet.getCell(`A${rowIndex}`).value = `Số tiền đã ghi thành toán: ..................... đồng (Ghi bằng chữ: ........................)`;
 
@@ -530,6 +952,7 @@ const createBCWorksheet = (workbook, data) => {
   worksheet.getCell(`${col7}${rowIndex}`).font = { bold: true };
   worksheet.getCell(`${col7}${rowIndex}`).alignment = { horizontal: "center" };
 
+  // Column widths
   worksheet.getColumn(1).width = 5;
   worksheet.getColumn(2).width = 15;
   for (let i = 0; i < numWeeks; i++) {
@@ -546,10 +969,21 @@ const createBCWorksheet = (workbook, data) => {
 };
 
 module.exports = {
+  // Báo cáo BC
   getBCReport,
   getAllBCReport,
   exportBCReport,
   exportAllBCReport,
+  
+  // Báo cáo thông thường
+  getTeacherReport,
+  exportMonthReport,
+  exportWeekReport,
+  exportWeekRangeReport,
+  exportSemesterReport,
+  exportYearReport,
+  
+  // Helper functions
   calculateStatistics,
   createBCExcelReport,
   createAllBCExcelReport,

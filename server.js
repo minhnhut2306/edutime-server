@@ -3,7 +3,14 @@ const cors = require('cors');
 require('dotenv').config();
 const app = express();
 
-app.use(cors());
+// ✅ SỬA CORS NÀY - Thêm options cụ thể
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'], // Các port frontend có thể dùng
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -15,6 +22,7 @@ app.use((req, res, next) => {
   console.log('Content-Type:', req.headers['content-type']);
   next();
 });
+
 app.get("/", (req, res) => {
   res.json({
     message: "Backend đang chạy!",

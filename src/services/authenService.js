@@ -154,6 +154,12 @@ const getUser = async (userId) => {
   return user;
 };
 
+const getAllUsers = async () => {
+  const users = await User.find().select("-password").sort({ createdAt: -1 });
+  return users;
+};
+
+
 const changePassword = async (userId, newPassword) => {
   if (!userId) {
     throw new Error("User ID is required");
@@ -196,6 +202,41 @@ const deleteUser = async (userId) => {
   return { message: "User deleted successfully" };
 };
 
+const updateUserRole = async (userId, newRole) => {
+  if (!userId) {
+    throw new Error("User ID is required");
+  }
+
+  if (!newRole || !["user", "admin"].includes(newRole)) {
+    throw new Error("Role must be 'user' or 'admin'");
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  user.role = newRole;
+  await user.save();
+
+  return { message: "Role updated successfully", user: user.toJSON() };
+};
+
+const deleteUserById = async (userId) => {
+  if (!userId) {
+    throw new Error("User ID is required");
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  await Token.deleteMany({ userId: user._id });
+  await User.findByIdAndDelete(userId);
+
+  return { message: "User deleted successfully" };
+};
 module.exports = {
   login,
   register,
@@ -204,6 +245,9 @@ module.exports = {
   refreshToken,
   revokeToken,
   getUser,
+  getAllUsers,
+  updateUserRole,
+  deleteUserById, 
   changePassword,
   deleteUser,
 };

@@ -10,6 +10,7 @@ const reportsController = require("../controllers/reportsController");
 const schoolYearController = require("../controllers/schoolYearController");
 const authMiddleware = require("../middleware/authMiddleware");
 const multer = require("multer");
+const isAdmin = require("../middleware/isAdmin.middleware");
 
 router.get("/", (req, res) => {
   res.json({
@@ -34,12 +35,16 @@ router.delete(
   authMiddleware,
   authenController.revokeToken
 );
+// Chỉ admin mới lấy được danh sách users
+router.get("/auth", authMiddleware, isAdmin, authenController.getAllUsers);
 router.get("/auth/me", authMiddleware, authenController.getProfile);
 router.patch(
   "/auth/me/password",
   authMiddleware,
   authenController.changePassword
 );
+router.put("/auth/:userId/role", authMiddleware, isAdmin, authenController.updateUserRole);
+router.delete("/auth/:userId", authMiddleware, isAdmin, authenController.deleteUserById);
 router.delete("/auth/me", authMiddleware, authenController.deleteUser);
 
 //teachers
@@ -48,6 +53,12 @@ router.get("/teachers/:id", authMiddleware, teacherController.getTeacherById);
 router.post("/teachers", authMiddleware, teacherController.createTeacher);
 router.put("/teachers/:id", authMiddleware, teacherController.updateTeacher);
 router.delete("/teachers/:id", authMiddleware, teacherController.deleteTeacher);
+router.put(
+  "/teachers/:id/user",
+  authMiddleware,
+  teacherController.updateTeacherUserId
+);
+
 router.post(
   "/teachers/import",
   authMiddleware,
@@ -90,6 +101,11 @@ router.post(
   authMiddleware,
   teachingRecordsController.createTeachingRecord
 );
+router.patch(
+  "/teaching-records/:id",
+  authMiddleware,
+  teachingRecordsController.updateTeachingRecord
+);
 router.delete(
   "/teaching-records/:id",
   authMiddleware,
@@ -123,11 +139,35 @@ router.get(
   reportsController.exportYearReport
 );
 
-router.get("/school-years", authMiddleware, schoolYearController.getSchoolYears);
-router.get("/school-years/active", authMiddleware, schoolYearController.getActiveSchoolYear);
-router.get("/school-years/:year", authMiddleware, schoolYearController.getSchoolYearData);
-router.post("/school-years", authMiddleware, schoolYearController.createSchoolYear);
-router.post("/school-years/finish", authMiddleware, schoolYearController.finishSchoolYear);
-router.delete("/school-years/:year", authMiddleware, schoolYearController.deleteSchoolYear);
+router.get(
+  "/school-years",
+  authMiddleware,
+  schoolYearController.getSchoolYears
+);
+router.get(
+  "/school-years/active",
+  authMiddleware,
+  schoolYearController.getActiveSchoolYear
+);
+router.get(
+  "/school-years/:year",
+  authMiddleware,
+  schoolYearController.getSchoolYearData
+);
+router.post(
+  "/school-years",
+  authMiddleware,
+  schoolYearController.createSchoolYear
+);
+router.post(
+  "/school-years/finish",
+  authMiddleware,
+  schoolYearController.finishSchoolYear
+);
+router.delete(
+  "/school-years/:year",
+  authMiddleware,
+  schoolYearController.deleteSchoolYear
+);
 
 module.exports = router;

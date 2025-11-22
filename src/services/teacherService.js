@@ -48,32 +48,43 @@ const getTeacherById = async (id) => {
 const createTeacher = async (data) => {
   const { name, phone, userId, subjectIds, mainClassId } = data;
 
-  if (!name || !userId) {
-    throw new Error("Name and userId are required");
+  // Chỉ bắt buộc name, subjectIds và mainClassId
+  if (!name || !subjectIds || !mainClassId) {
+    throw new Error("Name, subjectIds và mainClassId là bắt buộc");
   }
 
-  const [existingPhone, existingUser, user] = await Promise.all([
-    phone ? Teacher.findOne({ phone }) : null,
-    Teacher.findOne({ userId }),
-    User.findById(userId),
-  ]);
+  const checks = [];
 
-  if (existingPhone) {
-    throw new Error("Phone number already exists");
+  // Kiểm tra phone nếu có
+  if (phone) {
+    checks.push(
+      Teacher.findOne({ phone }).then((existing) => {
+        if (existing) throw new Error("Phone number already exists");
+      })
+    );
   }
 
-  if (existingUser) {
-    throw new Error("User already assigned to another teacher");
+  // Kiểm tra userId nếu có
+  if (userId) {
+    checks.push(
+      Teacher.findOne({ userId }).then((existing) => {
+        if (existing)
+          throw new Error("User already assigned to another teacher");
+      }),
+      User.findById(userId).then((user) => {
+        if (!user) throw new Error("User not found");
+      })
+    );
   }
 
-  if (!user) {
-    throw new Error("User not found");
+  if (checks.length > 0) {
+    await Promise.all(checks);
   }
 
   const teacher = await Teacher.create({
     name,
-    phone,
-    userId,
+    phone: phone || null,
+    userId: userId || null,
     subjectIds,
     mainClassId,
   });
@@ -93,19 +104,27 @@ const updateTeacher = async (id, data) => {
 
   const checks = [];
 
-  if (data.phone && data.phone !== teacher.phone) {
+  // Kiểm tra phone nếu có và khác với phone hiện tại
+  if (data.phone && (!teacher.phone || data.phone !== teacher.phone)) {
     checks.push(
       Teacher.findOne({ phone: data.phone }).then((existing) => {
-        if (existing) throw new Error("Phone number already exists");
+        if (existing && existing._id.toString() !== id) {
+          throw new Error("Phone number already exists");
+        }
       })
     );
   }
 
-  if (data.userId && data.userId.toString() !== teacher.userId.toString()) {
+  // Kiểm tra userId nếu có
+  if (data.userId) {
     checks.push(
       Teacher.findOne({ userId: data.userId }).then((existing) => {
-        if (existing)
+        if (existing && existing._id.toString() !== id) {
           throw new Error("User already assigned to another teacher");
+        }
+      }),
+      User.findById(data.userId).then((user) => {
+        if (!user) throw new Error("User not found");
       })
     );
   }
@@ -127,9 +146,40 @@ const updateTeacher = async (id, data) => {
   return updatedTeacher;
 };
 
+// Hàm mới: Cập nhật userId cho giáo viên
+const updateTeacherUserId = async (teacherId, userId) => {
+  const teacher = await Teacher.findById(teacherId);
+  if (!teacher) {
+    throw new Error("Teacher not found");
+  }
+
+  // Kiểm tra user tồn tại
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  // Kiểm tra user đã được gán cho giáo viên khác chưa
+  const existingTeacher = await Teacher.findOne({ userId });
+  if (existingTeacher && existingTeacher._id.toString() !== teacherId) {
+    throw new Error("User already assigned to another teacher");
+  }
+
+  // Cập nhật userId
+  teacher.userId = userId;
+  teacher.updatedAt = Date.now();
+  await teacher.save();
+
+  return teacher.populate([
+    { path: "userId", select: "email" },
+    { path: "subjectIds", select: "name" },
+    { path: "mainClassId", select: "name grade" },
+  ]);
+};
+
 const deleteTeacher = async (id) => {
   const teacher = await Teacher.findByIdAndDelete(id);
-  
+
   if (!teacher) {
     throw new Error("Teacher not found");
   }
@@ -165,6 +215,55 @@ const getRowValue = (row, fieldName) => {
   return key ? row[key] : null;
 };
 
+// Hàm loại bỏ dấu tiếng Việt
+const removeVietnameseTones = (str) => {
+  if (!str) return "";
+  str = str.toLowerCase().trim();
+  str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+  str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+  str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+  str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+  str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+  str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+  str = str.replace(/đ/g, "d");
+  return str;
+};
+
+// Hàm tìm môn học linh hoạt (không phân biệt hoa thường, dấu)
+const findSubjectFlexible = async (subjectName) => {
+  if (!subjectName) return null;
+
+  const normalizedName = removeVietnameseTones(subjectName);
+
+  // Tìm tất cả môn học
+  const allSubjects = await Subject.find({});
+
+  // Tìm môn học khớp
+  const subject = allSubjects.find((s) => {
+    const dbName = removeVietnameseTones(s.name);
+    return dbName === normalizedName;
+  });
+
+  return subject;
+};
+
+// Hàm tìm lớp linh hoạt (không phân biệt hoa thường, dấu)
+const findClassFlexible = async (className) => {
+  if (!className) return null;
+
+  const normalizedName = removeVietnameseTones(className);
+
+  // Tìm tất cả lớp
+  const allClasses = await Class.find({});
+
+  // Tìm lớp khớp
+  const classInfo = allClasses.find((c) => {
+    const dbName = removeVietnameseTones(c.name);
+    return dbName === normalizedName;
+  });
+
+  return classInfo;
+};
 const importTeachers = async (file) => {
   if (!file) {
     throw new Error("No file uploaded");
@@ -189,41 +288,35 @@ const importTeachers = async (file) => {
     const rowNumber = i + 2;
 
     try {
-      let teacherCode = getRowValue(row, "Mã GV");
-      teacherCode = teacherCode ? teacherCode.toString().trim() : null;
+      const teacherCode = await generateTeacherCode();
 
       const name = getRowValue(row, "Họ và tên");
-      const email = getRowValue(row, "Email");
-      const phone = getRowValue(row, "Số điện thoại");
-      const subjectName = getRowValue(row, "Môn dạy");
+      let phone = getRowValue(row, "Số điện thoại");
+      const subjectNames = getRowValue(row, "Môn dạy");
       const className = getRowValue(row, "Lớp chủ nhiệm");
 
-      if (!name || !email || !subjectName || !className) {
+      // Xử lý số điện thoại - thêm số 0 nếu thiếu
+      if (phone) {
+        phone = String(phone).trim();
+        // SĐT Việt Nam 10 số, nếu có 9 số và không bắt đầu bằng 0 thì thêm 0
+        if (phone.length === 9 && !phone.startsWith("0")) {
+          phone = "0" + phone;
+        }
+      }
+
+      if (!name || !subjectNames || !className) {
         results.failed.push({
           row: rowNumber,
           data: row,
           reason:
-            "Thiếu thông tin bắt buộc (Họ và tên, Email, Môn dạy, Lớp chủ nhiệm)",
+            "Thiếu thông tin bắt buộc (Họ và tên, Môn dạy, Lớp chủ nhiệm)",
         });
         continue;
       }
 
-      if (!teacherCode) {
-        teacherCode = await generateTeacherCode();
-      } else {
-        const existingCode = await Teacher.findOne({ teacherCode });
-        if (existingCode) {
-          results.failed.push({
-            row: rowNumber,
-            data: row,
-            reason: `Mã giáo viên ${teacherCode} đã tồn tại`,
-          });
-          continue;
-        }
-      }
-
-      if (phone && phone.trim()) {
-        const existingTeacher = await Teacher.findOne({ phone: phone.trim() });
+      // Kiểm tra phone trùng
+      if (phone && phone !== "") {
+        const existingTeacher = await Teacher.findOne({ phone: phone });
         if (existingTeacher) {
           results.failed.push({
             row: rowNumber,
@@ -234,40 +327,40 @@ const importTeachers = async (file) => {
         }
       }
 
-      let user = await User.findOne({ email });
-      if (!user) {
-        user = await User.create({
-          email: email.trim(),
-          password: "Teacher@123",
-        });
-      } else {
-        const existingTeacherWithUser = await Teacher.findOne({
-          userId: user._id,
-        });
-        if (existingTeacherWithUser) {
-          results.failed.push({
-            row: rowNumber,
-            data: row,
-            reason: `Email ${email} đã được gán cho giáo viên khác`,
-          });
-          continue;
+      // Xử lý nhiều môn học
+      const subjectNameList = subjectNames.split(",").map((s) => s.trim());
+      const subjectIds = [];
+      let missingSubject = null;
+
+      for (const subjectName of subjectNameList) {
+        const subject = await findSubjectFlexible(subjectName);
+        if (!subject) {
+          missingSubject = subjectName;
+          break;
         }
+        subjectIds.push(subject._id);
       }
 
-      const [subject, classInfo] = await Promise.all([
-        Subject.findOne({ name: subjectName.trim() }),
-        Class.findOne({ name: className.trim() }),
-      ]);
-
-      if (!subject) {
+      if (missingSubject) {
         results.failed.push({
           row: rowNumber,
           data: row,
-          reason: `Môn học "${subjectName}" không tồn tại`,
+          reason: `Môn học "${missingSubject}" không tồn tại`,
         });
         continue;
       }
 
+      if (subjectIds.length === 0) {
+        results.failed.push({
+          row: rowNumber,
+          data: row,
+          reason: "Không tìm thấy môn học nào hợp lệ",
+        });
+        continue;
+      }
+
+      // Tìm lớp chủ nhiệm
+      const classInfo = await findClassFlexible(className);
       if (!classInfo) {
         results.failed.push({
           row: rowNumber,
@@ -277,17 +370,16 @@ const importTeachers = async (file) => {
         continue;
       }
 
+      // Tạo giáo viên
       const teacher = await Teacher.create({
         teacherCode,
         name: name.trim(),
-        phone: phone ? phone.trim() : null,
-        userId: user._id,
-        subjectIds: [subject._id],
+        phone: phone || null,
+        subjectIds: subjectIds,
         mainClassId: classInfo._id,
       });
 
       const populatedTeacher = await Teacher.findById(teacher._id)
-        .populate("userId", "email")
         .populate("subjectIds", "name")
         .populate("mainClassId", "name grade");
 
@@ -319,6 +411,7 @@ module.exports = {
   getTeacherById,
   createTeacher,
   updateTeacher,
+  updateTeacherUserId,
   deleteTeacher,
   importTeachers,
 };

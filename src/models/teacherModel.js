@@ -7,14 +7,12 @@ const teacherSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
-    required: true,
-    unique: true,
+    sparse: true,  // Cho phép nhiều null
   },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
-    unique: true,
+    sparse: true,  // Cho phép nhiều null, bỏ unique: true
   },
   subjectIds: {
     type: [mongoose.Schema.Types.ObjectId],
@@ -35,5 +33,9 @@ const teacherSchema = new mongoose.Schema({
     default: Date.now,
   },
 });
+
+// Tạo sparse unique index - cho phép nhiều null nhưng không trùng khi có giá trị
+teacherSchema.index({ userId: 1 }, { unique: true, sparse: true });
+teacherSchema.index({ phone: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model("Teacher", teacherSchema);

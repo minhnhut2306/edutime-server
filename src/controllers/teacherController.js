@@ -4,7 +4,7 @@ const {
   successResponse,
   createdResponse,
   badRequestResponse,
-  notFoundResponse
+  notFoundResponse,
 } = require("../helper/createResponse.helper");
 
 const getTeachers = asyncHandler(async (req, res) => {
@@ -12,7 +12,7 @@ const getTeachers = asyncHandler(async (req, res) => {
     name: req.query.name,
     phone: req.query.phone,
     subjectId: req.query.subjectId,
-    mainClassId: req.query.mainClassId
+    mainClassId: req.query.mainClassId,
   };
 
   const teachers = await teacherService.getTeachers(filters);
@@ -32,12 +32,17 @@ const getTeacherById = asyncHandler(async (req, res) => {
 });
 
 const createTeacher = asyncHandler(async (req, res) => {
-  const { name, phone, userId, subjectIds, mainClassId } = req.body;
+  const { name, subjectIds, mainClassId } = req.body;
 
-  if (!name || !phone || !userId || !subjectIds || !mainClassId) {
+  // Chỉ bắt buộc name, subjectIds và mainClassId
+  if (!name || !subjectIds || !mainClassId) {
     return res
       .status(400)
-      .json(badRequestResponse("Thiếu thông tin bắt buộc"));
+      .json(
+        badRequestResponse(
+          "Thiếu thông tin bắt buộc: tên, môn học và lớp chủ nhiệm"
+        )
+      );
   }
 
   const teacher = await teacherService.createTeacher(req.body);
@@ -56,16 +61,33 @@ const updateTeacher = asyncHandler(async (req, res) => {
   );
 });
 
+// Hàm mới: Cập nhật userId khi user chọn giáo viên
+const updateTeacherUserId = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  if (!userId) {
+    return res.status(400).json(badRequestResponse("userId là bắt buộc"));
+  }
+
+  const teacher = await teacherService.updateTeacherUserId(id, userId);
+
+  return res.json(
+    successResponse("Gán user cho giáo viên thành công", { teacher })
+  );
+});
+
 const deleteTeacher = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const result = await teacherService.deleteTeacher(id);
 
-  return res.json(
-    successResponse("Xóa giáo viên thành công", result)
-  );
+  return res.json(successResponse("Xóa giáo viên thành công", result));
 });
 
 const importTeachers = asyncHandler(async (req, res) => {
+  console.log("req.file:", req.file); // Thêm dòng này
+  console.log("req.body:", req.body); // Thêm dòng này
+
   if (!req.file) {
     return res
       .status(400)
@@ -73,10 +95,8 @@ const importTeachers = asyncHandler(async (req, res) => {
   }
 
   const results = await teacherService.importTeachers(req.file);
-
-  return res.json(
-    successResponse("Import giáo viên hoàn tất", results)
-  );
+  console.log('Import results:', results)
+  return res.json(successResponse("Import giáo viên hoàn tất", results));
 });
 
 module.exports = {
@@ -84,6 +104,7 @@ module.exports = {
   getTeacherById,
   createTeacher,
   updateTeacher,
+  updateTeacherUserId,
   deleteTeacher,
-  importTeachers
+  importTeachers,
 };

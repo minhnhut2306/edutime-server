@@ -35,19 +35,20 @@ const register = asyncHandler(async (req, res) => {
 
   const newUser = await authenService.register(email, password);
 
-  return res
-    .status(201)
-    .json(
-      createdResponse("Đăng ký thành công", { 
-        userId: newUser._id, 
-        email: newUser.email 
-      })
-    );
+  return res.status(201).json(
+    createdResponse("Đăng ký thành công", {
+      userId: newUser._id,
+      email: newUser.email,
+    })
+  );
 });
 
 const logout = asyncHandler(async (req, res) => {
   const token = req.headers.authorization?.replace("Bearer ", "");
-
+  console.log(
+    "🔵 Logout request - Token:",
+    token ? token.substring(0, 20) + "..." : "NO TOKEN"
+  );
   if (!token) {
     return res
       .status(400)
@@ -109,7 +110,6 @@ const revokeToken = asyncHandler(async (req, res) => {
 });
 
 const getProfile = asyncHandler(async (req, res) => {
-  // ✅ Thống nhất sử dụng req.userId (từ middleware authentication)
   const userId = req.userId;
 
   const user = await authenService.getUser(userId);
@@ -117,6 +117,16 @@ const getProfile = asyncHandler(async (req, res) => {
   return res.json(
     successResponse("Lấy thông tin người dùng thành công", {
       user: user.toJSON(),
+    })
+  );
+});
+const getAllUsers = asyncHandler(async (req, res) => {
+  const users = await authenService.getAllUsers();
+
+  return res.json(
+    successResponse("Lấy danh sách người dùng thành công", {
+      users: users,
+      total: users.length,
     })
   );
 });
@@ -141,10 +151,29 @@ const deleteUser = asyncHandler(async (req, res) => {
   const userId = req.userId;
 
   const result = await authenService.deleteUser(userId);
-  
-  return res.json(
-    successResponse("Xóa tài khoản thành công", result)
-  );
+
+  return res.json(successResponse("Xóa tài khoản thành công", result));
+});
+
+const updateUserRole = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const { role } = req.body;
+
+  if (!role) {
+    return res.status(400).json(badRequestResponse("Role không được để trống"));
+  }
+
+  const result = await authenService.updateUserRole(userId, role);
+
+  return res.json(successResponse("Cập nhật quyền thành công", result));
+});
+
+const deleteUserById = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+
+  const result = await authenService.deleteUserById(userId);
+
+  return res.json(successResponse("Xóa người dùng thành công", result));
 });
 
 module.exports = {
@@ -155,6 +184,9 @@ module.exports = {
   refreshToken,
   revokeToken,
   getProfile,
+  getAllUsers,
   changePassword,
-  deleteUser
+  updateUserRole,
+  deleteUserById,
+  deleteUser,
 };
