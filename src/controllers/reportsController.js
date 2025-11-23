@@ -51,14 +51,17 @@ const getTeacherReport = asyncHandler(async (req, res) => {
 const exportReport = asyncHandler(async (req, res) => {
   try {
     // ✅ DEBUG INFO
+    console.log("🎯 ========================================");
     console.log("🎯 exportReport CONTROLLER CALLED");
+    console.log("🎯 ========================================");
     console.log("📋 Query params:", req.query);
     console.log("👤 User info:", {
       userId: req.userId,
       email: req.user?.email,
       role: req.user?.role
     });
-
+    console.log("🔗 Request URL:", req.originalUrl);
+    console.log("🔗 Request method:", req.method);
     const { teacherId, teacherIds, schoolYear, type = 'bc', bcNumber, weekId, weekIds, semester } = req.query;
 
     // ✅ Xử lý teacherId/teacherIds

@@ -8,6 +8,7 @@ const User = require("../models/userModel");
 const authMiddleware = async (req, res, next) => {
   try {
     // ✅ DEBUG: Log headers
+    console.log("🔐 authMiddleware - Path:", req.path);
     console.log("🔐 authMiddleware - Headers:", {
       authorization: req.headers.authorization ? "EXISTS" : "MISSING",
       contentType: req.headers['content-type']

@@ -456,10 +456,11 @@ const exportReport = async (teacherIds, schoolYear, options = {}) => {
     console.log(`✅ Total sheets created: ${sheetCount}`);
 
     if (sheetCount === 0) {
+      // ✅✅✅ THÔNG BÁO THÂN THIỆN CHO NGƯỜI DÙNG ✅✅✅
       return { 
         success: false, 
         statusCode: 404, 
-        message: "Không có dữ liệu để xuất BC.\n\nVui lòng kiểm tra:\n✓ Giáo viên đã có bản ghi dạy chưa?\n✓ Bản ghi đã liên kết với tuần học đúng chưa?\n✓ Năm học có khớp không?" 
+        message: `Không tìm thấy dữ liệu giảng dạy cho năm học ${schoolYear}.\n\nGiáo viên chưa nhập tiết dạy hoặc dữ liệu thuộc năm học khác.` 
       };
     }
 
@@ -469,7 +470,7 @@ const exportReport = async (teacherIds, schoolYear, options = {}) => {
     return { 
       success: false, 
       statusCode: 500, 
-      message: "Lỗi khi xuất báo cáo: " + error.message 
+      message: "Lỗi hệ thống khi xuất báo cáo. Vui lòng thử lại sau!" 
     };
   }
 };
@@ -487,7 +488,7 @@ const exportMonthReport = async (teacherId, schoolYear, month, bcNumber = null) 
 
 const exportWeekReport = async (teacherId, weekId, schoolYear) => {
   const week = await Week.findById(weekId);
-  if (!week) return { success: false, statusCode: 404, message: "Không tìm thấy tuần" };
+  if (!week) return { success: false, statusCode: 404, message: "Không tìm thấy tuần học" };
   
   // ✅ Nếu không truyền schoolYear thì tự động xác định từ tuần
   if (!schoolYear) {
@@ -507,7 +508,7 @@ const exportWeekRangeReport = async (teacherId, weekIds, schoolYear) => {
   }
   
   const week = await Week.findById(weekIds[0]);
-  if (!week) return { success: false, statusCode: 404, message: "Không tìm thấy tuần" };
+  if (!week) return { success: false, statusCode: 404, message: "Không tìm thấy tuần học" };
   
   // ✅ Nếu không truyền schoolYear thì tự động xác định từ tuần
   if (!schoolYear) {
@@ -544,6 +545,14 @@ const getBCReport = async (teacherId, schoolYear, bcNumber) => {
       .populate("subjectId", "name")
       .populate("classId", "name grade");
 
+    if (records.length === 0) {
+      return { 
+        success: false, 
+        statusCode: 404, 
+        message: `Không có dữ liệu giảng dạy cho năm học ${schoolYear}` 
+      };
+    }
+
     return {
       success: true,
       data: {
@@ -555,7 +564,7 @@ const getBCReport = async (teacherId, schoolYear, bcNumber) => {
       },
     };
   } catch (error) {
-    return { success: false, statusCode: 500, message: error.message };
+    return { success: false, statusCode: 500, message: "Lỗi hệ thống: " + error.message };
   }
 };
 
@@ -573,7 +582,15 @@ const getTeacherReport = async (teacherId, type, filters = {}) => {
       .populate("classId", "name grade")
       .sort({ "weekId.weekNumber": 1 });
 
-    if (records.length === 0) return { success: false, statusCode: 404, message: "Không có dữ liệu" };
+    if (records.length === 0) {
+      return { 
+        success: false, 
+        statusCode: 404, 
+        message: filters.schoolYear 
+          ? `Không có dữ liệu giảng dạy cho năm học ${filters.schoolYear}` 
+          : "Không có dữ liệu giảng dạy" 
+      };
+    }
 
     return {
       success: true,
@@ -589,7 +606,7 @@ const getTeacherReport = async (teacherId, type, filters = {}) => {
       },
     };
   } catch (error) {
-    return { success: false, statusCode: 500, message: error.message };
+    return { success: false, statusCode: 500, message: "Lỗi hệ thống: " + error.message };
   }
 };
 
