@@ -1,3 +1,5 @@
+// ==================== UPDATED: src/services/reportsService.js ====================
+
 const TeachingRecords = require("../models/teachingRecordsModel");
 const Teacher = require("../models/teacherModel");
 const Week = require("../models/weekModel");
@@ -7,18 +9,12 @@ const ExcelJS = require("exceljs");
 
 // ==================== HELPER FUNCTIONS ====================
 
-/**
- * Xác định tháng (BC) từ tuần
- */
 const getMonthFromWeek = (week, schoolYear) => {
   if (!week || !week.startDate) return 9;
   const startDate = new Date(week.startDate);
-  return startDate.getMonth() + 1; // 1-12
+  return startDate.getMonth() + 1;
 };
 
-/**
- * Lấy các tuần trong 1 tháng
- */
 const getWeeksInMonth = async (month, schoolYear) => {
   const allWeeks = await Week.find({}).sort({ weekNumber: 1 });
   const [startYear, endYear] = schoolYear.split('-').map(Number);
@@ -33,9 +29,6 @@ const getWeeksInMonth = async (month, schoolYear) => {
   });
 };
 
-/**
- * Group records theo tháng (BC)
- */
 const groupRecordsByMonth = (records, weeks) => {
   const groups = {};
   
@@ -56,45 +49,41 @@ const groupRecordsByMonth = (records, weeks) => {
   return groups;
 };
 
-/**
- * Tạo 1 sheet Excel theo mẫu chuẩn cho 1 GV, 1 BC (tháng)
- */
+// ✅ FIX: Tạo sheet Excel theo mẫu chuẩn
 const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, records, weeksInMonth, bcNumber, schoolYear) => {
   const worksheet = workbook.addWorksheet(sheetName.substring(0, 31));
   
-  // Độ rộng cột
   worksheet.columns = [
     { width: 5 }, { width: 14 }, { width: 12 }, { width: 12 }, 
     { width: 12 }, { width: 12 }, { width: 14 }, { width: 12 }, 
     { width: 10 }, { width: 12 }, { width: 14 }, { width: 14 }
   ];
 
-  // === HEADER ===
+  // HEADER
   worksheet.getCell('A1').value = 'SỞ GD&ĐT TỈNH VĨNH LONG';
   worksheet.getCell('A1').font = { size: 10 };
   
   worksheet.getCell('A2').value = 'TRUNG TÂM GDNN-GDTX MỎ CÀY NAM';
   worksheet.getCell('A2').font = { size: 10, bold: true };
 
-  // === TIÊU ĐỀ ===
+  // TIÊU ĐỀ
   worksheet.mergeCells('A4:L4');
   worksheet.getCell('A4').value = `BẢNG KÊ GIỜ THÁNG ${String(bcNumber).padStart(2, '0')} NĂM HỌC ${schoolYear} (BIÊN CHẾ)`;
   worksheet.getCell('A4').font = { size: 14, bold: true };
   worksheet.getCell('A4').alignment = { horizontal: 'center' };
 
-  // === MÔN HỌC ===
+  // MÔN HỌC
   worksheet.mergeCells('A5:L5');
   worksheet.getCell('A5').value = `Môn : ${subject?.name || ''}`;
   worksheet.getCell('A5').font = { size: 11, bold: true };
   worksheet.getCell('A5').alignment = { horizontal: 'center' };
 
-  // === HỌ TÊN GV ===
+  // HỌ TÊN GV
   worksheet.getCell('A7').value = `Họ và tên giáo viên:   ${teacher.name}`;
 
-  // === PHÂN CÔNG GIẢNG DẠY ===
+  // PHÂN CÔNG GIẢNG DẠY
   worksheet.getCell('A8').value = '* Phân công giảng dạy:';
   
-  // Tính phân công từ records
   const classInfo = {};
   records.forEach(r => {
     const className = r.classId?.name || '';
@@ -112,19 +101,19 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
   });
   worksheet.getCell('B8').value = phanCongParts.length > 0 ? `- ${phanCongParts.join('; ')}` : '';
 
-  // === TỔNG SỐ TIẾT/TUẦN ===
+  // TỔNG SỐ TIẾT/TUẦN
   const totalPerWeek = Math.round(records.reduce((sum, r) => sum + (r.periods || 0), 0) / weeksCount);
   worksheet.mergeCells('H9:L9');
   worksheet.getCell('H9').value = `Tổng cộng số tiết giảng dạy/tuần: ${String(totalPerWeek).padStart(2, '0')} Tiết`;
 
-  // === PHÂN CÔNG KIÊM NHIỆM ===
+  // PHÂN CÔNG KIÊM NHIỆM
   worksheet.getCell('A10').value = '* Phần công kiêm nhiệm:';
   worksheet.getCell('B10').value = `-Chủ nhiệm lớp: ${mainClass?.name || '..........'}. tiết/tuần`;
   worksheet.getCell('B11').value = '-Kiêm nhiệm: ............. tiết/ tuần';
   worksheet.mergeCells('H11:L11');
   worksheet.getCell('H11').value = 'Tổng cộng số tiết kiêm nhiệm/tuần: ...... tiết.';
 
-  // === TABLE HEADER ===
+  // TABLE HEADER
   worksheet.mergeCells('A13:A14');
   worksheet.mergeCells('B13:B14');
   worksheet.mergeCells('C13:F13');
@@ -145,7 +134,7 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
   worksheet.getCell('K13').value = 'Thành tiền';
   worksheet.getCell('L13').value = 'Phụ chú';
 
-  // Tuần headers (row 14)
+  // Tuần headers
   const weeks = weeksInMonth.slice(0, 4);
   for (let i = 0; i < 4; i++) {
     const col = String.fromCharCode(67 + i);
@@ -167,7 +156,7 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
     cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
   });
 
-  // === DATA ROWS ===
+  // DATA ROWS
   let rowIndex = 15;
   const categories = [
     { label: 'Khối 12', grades: ['12'] },
@@ -219,7 +208,7 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
     rowIndex++;
   });
 
-  // === TỔNG CỘNG ===
+  // TỔNG CỘNG
   worksheet.getCell(`B${rowIndex}`).value = 'Tổng cộng';
   worksheet.getCell(`B${rowIndex}`).font = { bold: true };
   
@@ -241,7 +230,7 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
   
   rowIndex += 2;
 
-  // === FOOTER ===
+  // FOOTER
   worksheet.getCell(`A${rowIndex}`).value = 'Số tiền đề nghị thanh toán...............................đồng. (Ghi bằng chữ:.......................................................................)';
   
   rowIndex += 2;
@@ -259,31 +248,23 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
   worksheet.getCell(`J${rowIndex}`).value = 'GIÁO VIÊN KÊ GIỜ';
   worksheet.getCell(`J${rowIndex}`).font = { bold: true };
 
-  // Row heights
   worksheet.getRow(4).height = 25;
   worksheet.getRow(13).height = 25;
   worksheet.getRow(14).height = 50;
-
-  return worksheet;
 };
 
 // ==================== MAIN EXPORT FUNCTION ====================
 
 /**
- * Xuất Excel báo cáo - DÙNG CHUNG CHO TẤT CẢ LOẠI
- * - Tự động xác định BC từ dữ liệu
- * - Hỗ trợ 1 hoặc nhiều GV
- * - Mỗi GV + mỗi BC = 1 sheet
- * 
- * @param {string|array} teacherIds - ID giáo viên hoặc mảng IDs
- * @param {string} schoolYear - Năm học
- * @param {object} options - { type: 'bc'|'week'|'semester'|'year', bcNumber, weekId, weekIds, semester }
+ * ✅ FIX: Xuất Excel báo cáo - DÙNG CHUNG CHO TẤT CẢ LOẠI
  */
 const exportReport = async (teacherIds, schoolYear, options = {}) => {
   try {
     const { type = 'bc', bcNumber, weekId, weekIds, semester } = options;
     const teacherIdArray = Array.isArray(teacherIds) ? teacherIds : [teacherIds];
     
+    console.log("📊 exportReport SERVICE - Start:", { teacherIdArray, schoolYear, type, bcNumber, weekId });
+
     // Lấy tất cả weeks
     const allWeeks = await Week.find({}).sort({ weekNumber: 1 });
     
@@ -296,46 +277,57 @@ const exportReport = async (teacherIds, schoolYear, options = {}) => {
         .populate('subjectIds', 'name')
         .populate('mainClassId', 'name grade');
       
-      if (!teacher) continue;
+      if (!teacher) {
+        console.warn(`⚠️ Không tìm thấy giáo viên: ${teacherId}`);
+        continue;
+      }
 
-      // Lấy tất cả records của GV trong năm học
-      let query = { teacherId, schoolYear };
+      console.log(`📝 Processing teacher: ${teacher.name} (${teacherId})`);
+
+      // ✅ FIX: Xây dựng query chính xác
+      let query = { teacherId: teacherId, schoolYear: schoolYear };
       
-      // Filter theo options
       if (type === 'week' && weekId) {
         query.weekId = weekId;
+        console.log(`🔍 Filtering by weekId: ${weekId}`);
       } else if (type === 'week' && weekIds && weekIds.length > 0) {
         query.weekId = { $in: weekIds };
+        console.log(`🔍 Filtering by weekIds: ${weekIds.join(',')}`);
       } else if (type === 'semester' && semester) {
-        // Semester 1: tuần 1-18, Semester 2: tuần 19-35
         const semesterWeeks = allWeeks.filter(w => {
           const wn = w.weekNumber || 0;
           return semester === 1 ? (wn >= 1 && wn <= 18) : (wn >= 19 && wn <= 35);
         });
         query.weekId = { $in: semesterWeeks.map(w => w._id) };
+        console.log(`🔍 Filtering by semester ${semester}: ${semesterWeeks.length} weeks`);
       }
-      // type === 'year' hoặc 'bc' với bcNumber: không filter thêm
 
+      // ✅ FIX: Fetch records
       const records = await TeachingRecords.find(query)
         .populate("weekId", "weekNumber startDate endDate")
         .populate("subjectId", "name")
         .populate("classId", "name grade")
         .sort({ "weekId.weekNumber": 1 });
 
-      if (records.length === 0) continue;
+      console.log(`📋 Found ${records.length} records for ${teacher.name}`);
 
-      // Group records theo tháng (BC)
+      if (records.length === 0) {
+        console.warn(`⚠️ Không có dữ liệu cho ${teacher.name} với query:`, query);
+        continue;
+      }
+
+      // Group records theo tháng
       const monthGroups = groupRecordsByMonth(records, allWeeks);
       
-      // Nếu chỉ định bcNumber cụ thể, chỉ lấy tháng đó
       let monthsToExport = Object.keys(monthGroups).map(Number);
       if (bcNumber) {
         monthsToExport = monthsToExport.filter(m => m === bcNumber);
       }
 
-      // Tạo sheet cho mỗi tháng (BC)
+      console.log(`📅 Months to export: ${monthsToExport.join(',')}`);
+
+      // Tạo sheet cho mỗi tháng
       for (const month of monthsToExport.sort((a, b) => {
-        // Sort: 9,10,11,12,1,2,3,4,5,6,7,8
         const orderA = a >= 9 ? a - 9 : a + 3;
         const orderB = b >= 9 ? b - 9 : b + 3;
         return orderA - orderB;
@@ -343,14 +335,14 @@ const exportReport = async (teacherIds, schoolYear, options = {}) => {
         const monthData = monthGroups[month];
         if (!monthData || monthData.records.length === 0) continue;
 
-        // Lấy weeks trong tháng
         const weeksInMonth = await getWeeksInMonth(month, schoolYear);
 
-        // Tên sheet
-        const teacherShortName = teacher.name.split(' ').pop(); // Lấy tên cuối
+        const teacherShortName = teacher.name.split(' ').pop();
         const sheetName = teacherIdArray.length > 1 
           ? `BC${month}_${teacherShortName}`
           : `BC ${month}`;
+
+        console.log(`📄 Creating sheet: ${sheetName}`);
 
         await createBCSheet(
           workbook,
@@ -367,18 +359,28 @@ const exportReport = async (teacherIds, schoolYear, options = {}) => {
       }
     }
 
+    console.log(`✅ Total sheets created: ${sheetCount}`);
+
     if (sheetCount === 0) {
-      return { success: false, statusCode: 404, message: "Không có dữ liệu để xuất" };
+      return { 
+        success: false, 
+        statusCode: 404, 
+        message: "Không có dữ liệu để xuất. Vui lòng kiểm tra:\n- Giáo viên đã tạo bản ghi chưa?\n- Bản ghi đã được liên kết với tuần học chưa?\n- Năm học có khớp không?" 
+      };
     }
 
     return { success: true, data: { workbook, sheetCount } };
   } catch (error) {
-    console.error("❌ Error in exportReport:", error);
-    return { success: false, statusCode: 500, message: "Lỗi khi xuất báo cáo: " + error.message };
+    console.error("❌ exportReport ERROR:", error);
+    return { 
+      success: false, 
+      statusCode: 500, 
+      message: "Lỗi khi xuất báo cáo: " + error.message 
+    };
   }
 };
 
-// ==================== WRAPPER FUNCTIONS (backward compatible) ====================
+// ==================== WRAPPER FUNCTIONS ====================
 
 const exportBCReport = async (teacherIds, schoolYear, bcNumber) => {
   return await exportReport(teacherIds, schoolYear, { type: 'bc', bcNumber });
@@ -390,11 +392,9 @@ const exportMonthReport = async (teacherId, schoolYear, month, bcNumber = null) 
 };
 
 const exportWeekReport = async (teacherId, weekId) => {
-  // Lấy week để xác định schoolYear
   const week = await Week.findById(weekId);
   if (!week) return { success: false, statusCode: 404, message: "Không tìm thấy tuần" };
   
-  // Xác định schoolYear từ week
   const weekDate = new Date(week.startDate);
   const year = weekDate.getFullYear();
   const month = weekDate.getMonth() + 1;
@@ -408,7 +408,6 @@ const exportWeekRangeReport = async (teacherId, weekIds) => {
     return { success: false, statusCode: 400, message: "Phải cung cấp weekIds" };
   }
   
-  // Lấy week đầu tiên để xác định schoolYear
   const week = await Week.findById(weekIds[0]);
   if (!week) return { success: false, statusCode: 404, message: "Không tìm thấy tuần" };
   

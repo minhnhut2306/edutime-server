@@ -1,3 +1,5 @@
+// ==================== UPDATED: src/controllers/reportsController.js ====================
+
 const reportsService = require("../services/reportsService");
 const asyncHandler = require("../middleware/asyncHandler");
 const {
@@ -43,76 +45,106 @@ const getTeacherReport = asyncHandler(async (req, res) => {
 });
 
 /**
- * Xuất Excel - UNIFIED ENDPOINT
- * GET /api/reports/export?teacherId=...&schoolYear=...&type=...
- * 
- * Params:
- * - teacherId hoặc teacherIds (JSON array)
- * - schoolYear: bắt buộc
- * - type: bc|week|semester|year (mặc định: bc)
- * - bcNumber: số BC (nếu type=bc)
- * - weekId: ID tuần (nếu type=week)
- * - weekIds: JSON array IDs tuần (nếu type=week)
- * - semester: 1 hoặc 2 (nếu type=semester)
+ * ✅ FIX: Xuất Excel - UNIFIED ENDPOINT
+ * GET /api/reports/export?teacherId=...&schoolYear=...&type=...&weekId=...
  */
 const exportReport = asyncHandler(async (req, res) => {
-  const { teacherId, teacherIds, schoolYear, type = 'bc', bcNumber, weekId, weekIds, semester } = req.query;
+  try {
+    console.log("📋 exportReport START - Query params:", req.query);
 
-  // Xử lý teacherId/teacherIds
-  let targetTeacherIds;
-  if (teacherIds) {
-    try {
-      targetTeacherIds = Array.isArray(teacherIds) ? teacherIds : JSON.parse(teacherIds);
-    } catch (e) {
-      return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherIds phải là JSON array hợp lệ"));
+    const { teacherId, teacherIds, schoolYear, type = 'bc', bcNumber, weekId, weekIds, semester } = req.query;
+
+    // ✅ FIX 1: Xử lý teacherId/teacherIds an toàn
+    let targetTeacherIds;
+    if (teacherIds) {
+      try {
+        targetTeacherIds = Array.isArray(teacherIds) ? teacherIds : JSON.parse(teacherIds);
+      } catch (e) {
+        targetTeacherIds = [teacherIds];
+      }
+    } else if (teacherId) {
+      targetTeacherIds = [teacherId];
+    } else {
+      return res.status(STATUS_CODES.BAD_REQUEST).json(
+        badRequestResponse("teacherId hoặc teacherIds là bắt buộc")
+      );
     }
-  } else if (teacherId) {
-    targetTeacherIds = [teacherId];
-  } else {
-    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherId hoặc teacherIds là bắt buộc"));
-  }
 
-  if (!schoolYear) {
-    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("schoolYear là bắt buộc"));
-  }
-
-  // Build options
-  const options = { type };
-  if (bcNumber) options.bcNumber = parseInt(bcNumber);
-  if (weekId) options.weekId = weekId;
-  if (weekIds) {
-    try {
-      options.weekIds = Array.isArray(weekIds) ? weekIds : JSON.parse(weekIds);
-    } catch (e) {
-      return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("weekIds phải là JSON array hợp lệ"));
+    if (!schoolYear) {
+      return res.status(STATUS_CODES.BAD_REQUEST).json(
+        badRequestResponse("schoolYear là bắt buộc")
+      );
     }
-  }
-  if (semester) options.semester = parseInt(semester);
 
-  // Export
-  const result = await reportsService.exportReport(targetTeacherIds, schoolYear, options);
+    // ✅ FIX 2: Log debug
+    console.log("📊 Export Debug Info:", {
+      targetTeacherIds,
+      schoolYear,
+      type,
+      bcNumber,
+      weekId,
+      weekIds,
+      semester
+    });
 
-  if (!result.success) {
-    return res.status(result.statusCode || 500).json(
-      result.statusCode === 404 ? notFoundResponse(result.message) : serverErrorResponse(result.message)
+    // Build options
+    const options = { type };
+    if (bcNumber) options.bcNumber = parseInt(bcNumber);
+    if (weekId) options.weekId = weekId;
+    if (weekIds) {
+      try {
+        options.weekIds = Array.isArray(weekIds) ? weekIds : JSON.parse(weekIds);
+      } catch (e) {
+        options.weekIds = [weekIds];
+      }
+    }
+    if (semester) options.semester = parseInt(semester);
+
+    // ✅ FIX 3: Gọi service
+    const result = await reportsService.exportReport(targetTeacherIds, schoolYear, options);
+
+    console.log("📊 Export Result:", {
+      success: result.success,
+      statusCode: result.statusCode,
+      message: result.message,
+      hasWorkbook: !!result.data?.workbook
+    });
+
+    if (!result.success) {
+      const statusCode = result.statusCode || 500;
+      if (statusCode === 404) {
+        return res.status(404).json(
+          notFoundResponse(`${result.message}\n\nChitiết: teacherId=${targetTeacherIds.join(',')}, type=${type}, schoolYear=${schoolYear}`)
+        );
+      }
+      return res.status(statusCode).json(
+        serverErrorResponse(result.message)
+      );
+    }
+
+    // Build filename
+    let fileName = `BaoCao_${schoolYear}`;
+    if (type === 'bc' && bcNumber) fileName = `BC${bcNumber}_${schoolYear}`;
+    else if (type === 'week') fileName = `BaoCaoTuan_${schoolYear}`;
+    else if (type === 'semester') fileName = `HocKy${semester}_${schoolYear}`;
+    else if (type === 'year') fileName = `CaNam_${schoolYear}`;
+    
+    if (targetTeacherIds.length > 1) fileName += `_${targetTeacherIds.length}GV`;
+    fileName += '.xlsx';
+
+    console.log("📥 Sending file:", fileName);
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+
+    await result.data.workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("❌ exportReport ERROR:", error);
+    return res.status(500).json(
+      serverErrorResponse("Lỗi xuất báo cáo: " + error.message)
     );
   }
-
-  // Build filename
-  let fileName = `BaoCao_${schoolYear}`;
-  if (type === 'bc' && bcNumber) fileName = `BC${bcNumber}_${schoolYear}`;
-  else if (type === 'week') fileName = `BaoCaoTuan_${schoolYear}`;
-  else if (type === 'semester') fileName = `HocKy${semester}_${schoolYear}`;
-  else if (type === 'year') fileName = `CaNam_${schoolYear}`;
-  
-  if (targetTeacherIds.length > 1) fileName += `_${targetTeacherIds.length}GV`;
-  fileName += '.xlsx';
-
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-
-  await result.data.workbook.xlsx.write(res);
-  res.end();
 });
 
 // ==================== BACKWARD COMPATIBLE ENDPOINTS ====================
