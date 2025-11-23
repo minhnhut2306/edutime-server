@@ -4,44 +4,65 @@ const User = require("../models/userModel");
 
 /**
  * Auth middleware for token stored in DB (Token model).
- * - authenService.verifyToken(token) returns the Token document { userId, token, expiresAt, ... }
- * - We then load the full User by userId and attach req.user so controllers can access req.user.role, email, ...
  */
 const authMiddleware = async (req, res, next) => {
   try {
+    // ✅ DEBUG: Log headers
+    console.log("🔐 authMiddleware - Headers:", {
+      authorization: req.headers.authorization ? "EXISTS" : "MISSING",
+      contentType: req.headers['content-type']
+    });
+
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res
-        .status(401)
-        .json(unauthorizedResponse("Token không được cung cấp hoặc không đúng định dạng"));
+    
+    // ✅ Kiểm tra header
+    if (!authHeader) {
+      console.error("❌ No Authorization header");
+      return res.status(401).json(
+        unauthorizedResponse("Token không được cung cấp hoặc không đúng định dạng")
+      );
+    }
+
+    if (!authHeader.startsWith("Bearer ")) {
+      console.error("❌ Invalid Authorization format:", authHeader.substring(0, 20));
+      return res.status(401).json(
+        unauthorizedResponse("Token không được cung cấp hoặc không đúng định dạng")
+      );
     }
 
     const token = authHeader.substring(7);
 
-    // verifyToken returns Token document (or throws)
+    // ✅ DEBUG: Token info
+    console.log("🔑 Token extracted:", token.substring(0, 20) + "...");
+
+    // Verify token
     const tokenData = await authenService.verifyToken(token);
     if (!tokenData || !tokenData.userId) {
+      console.error("❌ Invalid token data");
       return res.status(401).json(unauthorizedResponse("Token không hợp lệ"));
     }
 
-    // Load full user so controllers can use req.user.role, req.user.email, ...
+    console.log("✅ Token valid, userId:", tokenData.userId);
+
+    // Load full user
     const user = await User.findById(tokenData.userId).select("-password");
     if (!user) {
-      // optional: revoke token if user deleted?
-      // await authenService.revokeToken(token); // uncomment if you want to remove orphan tokens
+      console.error("❌ User not found:", tokenData.userId);
       return res.status(401).json(unauthorizedResponse("Người dùng không tồn tại"));
     }
 
-    // Attach user and convenience fields
+    console.log("✅ User found:", user.email);
+
+    // Attach user
     req.user = user.toObject ? user.toObject() : user;
     req.userId = req.user._id || req.user.id;
     req.token = token;
 
-    console.log("AUTH DEBUG - attached req.user:", { userId: req.userId, role: req.user.role, email: req.user.email });
+    console.log("✅ Auth successful:", { userId: req.userId, role: req.user.role, email: req.user.email });
 
     next();
   } catch (error) {
-    console.error("AUTH ERROR:", error && error.message ? error.message : error);
+    console.error("❌ AUTH ERROR:", error.message);
     const map = {
       "Invalid token": "Token không hợp lệ",
       "Token expired": "Token đã hết hạn",

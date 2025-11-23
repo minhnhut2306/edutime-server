@@ -12,6 +12,9 @@ const authMiddleware = require("../middleware/authMiddleware");
 const multer = require("multer");
 const isAdmin = require("../middleware/isAdmin.middleware");
 
+const upload = multer({ storage: multer.memoryStorage() });
+
+// ==================== HEALTH CHECK ====================
 router.get("/", (req, res) => {
   res.json({
     message: "Backend đang chạy!",
@@ -19,160 +22,71 @@ router.get("/", (req, res) => {
   });
 });
 
-const upload = multer({ storage: multer.memoryStorage() });
-
+// ==================== AUTH ROUTES ====================
 router.post("/auth/register", authenController.register);
 router.post("/auth/login", authenController.login);
 router.post("/auth/token/verify", authenController.verifyToken);
 router.post("/auth/logout", authMiddleware, authenController.logout);
-router.post(
-  "/auth/token/refresh",
-  authMiddleware,
-  authenController.refreshToken
-);
-router.delete(
-  "/auth/token/revoke",
-  authMiddleware,
-  authenController.revokeToken
-);
-// Chỉ admin mới lấy được danh sách users
+router.post("/auth/token/refresh", authMiddleware, authenController.refreshToken);
+router.delete("/auth/token/revoke", authMiddleware, authenController.revokeToken);
 router.get("/auth", authMiddleware, isAdmin, authenController.getAllUsers);
 router.get("/auth/me", authMiddleware, authenController.getProfile);
-router.patch(
-  "/auth/me/password",
-  authMiddleware,
-  authenController.changePassword
-);
+router.patch("/auth/me/password", authMiddleware, authenController.changePassword);
 router.put("/auth/:userId/role", authMiddleware, isAdmin, authenController.updateUserRole);
 router.delete("/auth/:userId", authMiddleware, isAdmin, authenController.deleteUserById);
 router.delete("/auth/me", authMiddleware, authenController.deleteUser);
 
-//teachers
+// ==================== TEACHERS ROUTES ====================
 router.get("/teachers", authMiddleware, teacherController.getTeachers);
 router.get("/teachers/:id", authMiddleware, teacherController.getTeacherById);
 router.post("/teachers", authMiddleware, teacherController.createTeacher);
 router.put("/teachers/:id", authMiddleware, teacherController.updateTeacher);
 router.delete("/teachers/:id", authMiddleware, teacherController.deleteTeacher);
-router.put(
-  "/teachers/:id/user",
-  authMiddleware,
-  teacherController.updateTeacherUserId
-);
+router.put("/teachers/:id/user", authMiddleware, teacherController.updateTeacherUserId);
+router.post("/teachers/import", authMiddleware, upload.single("file"), teacherController.importTeachers);
 
-router.post(
-  "/teachers/import",
-  authMiddleware,
-  upload.single("file"),
-  teacherController.importTeachers
-);
-
-//classes
+// ==================== CLASSES ROUTES ====================
 router.get("/classes", authMiddleware, classController.getClasses);
 router.get("/classes/:id", authMiddleware, classController.getClassById);
 router.post("/classes", authMiddleware, classController.createClass);
 router.put("/classes/:id", authMiddleware, classController.updateClass);
 router.delete("/classes/:id", authMiddleware, classController.deleteClass);
-router.post(
-  "/classes/import",
-  authMiddleware,
-  upload.single("file"),
-  classController.importClasses
-);
+router.post("/classes/import", authMiddleware, upload.single("file"), classController.importClasses);
 
-//subjects
+// ==================== SUBJECTS ROUTES ====================
 router.get("/subjects", authMiddleware, subjectController.getSubjects);
 router.post("/subjects", authMiddleware, subjectController.createSubject);
 router.delete("/subjects/:id", authMiddleware, subjectController.deleteSubject);
 
-//weeks
+// ==================== WEEKS ROUTES ====================
 router.get("/weeks", authMiddleware, weekController.getWeeks);
 router.post("/weeks", authMiddleware, weekController.createWeek);
 router.put("/weeks/:id", authMiddleware, weekController.updateWeek);
 router.delete("/weeks/:id", authMiddleware, weekController.deleteWeek);
 
-//teaching-records
-router.get(
-  "/teaching-records",
-  authMiddleware,
-  teachingRecordsController.getTeachingRecords
-);
-router.post(
-  "/teaching-records",
-  authMiddleware,
-  teachingRecordsController.createTeachingRecord
-);
-router.patch(
-  "/teaching-records/:id",
-  authMiddleware,
-  teachingRecordsController.updateTeachingRecord
-);
-router.delete(
-  "/teaching-records/:id",
-  authMiddleware,
-  teachingRecordsController.deleteTeachingRecord
-);
+// ==================== TEACHING RECORDS ROUTES ====================
+router.get("/teaching-records", authMiddleware, teachingRecordsController.getTeachingRecords);
+router.post("/teaching-records", authMiddleware, teachingRecordsController.createTeachingRecord);
+router.patch("/teaching-records/:id", authMiddleware, teachingRecordsController.updateTeachingRecord);
+router.delete("/teaching-records/:id", authMiddleware, teachingRecordsController.deleteTeachingRecord);
 
-//reports
-router.get(
-  "/reports/teacher/:id",
-  authMiddleware,
-  reportsController.getTeacherReport
-);
-router.get(
-  "/reports/export/month",
-  authMiddleware,
-  reportsController.exportMonthReport
-);
-router.get(
-  "/reports/export/week",
-  authMiddleware,
-  reportsController.exportWeekReport
-);
-router.get(
-  "/reports/export/semester",
-  authMiddleware,
-  reportsController.exportSemesterReport
-);
-router.get(
-  "/reports/export/year",
-  authMiddleware,
-  reportsController.exportYearReport
-);
-router.get(
-  "/reports/export",
-  authMiddleware,
-  reportsController.exportReport
-);
+// ==================== REPORTS ROUTES ====================
+// ✅✅✅ QUAN TRỌNG: Đặt route /export TRƯỚC các route có :id ✅✅✅
+router.get("/reports/export", authMiddleware, reportsController.exportReport);
+router.get("/reports/export/month", authMiddleware, reportsController.exportMonthReport);
+router.get("/reports/export/week", authMiddleware, reportsController.exportWeekReport);
+router.get("/reports/export/semester", authMiddleware, reportsController.exportSemesterReport);
+router.get("/reports/export/year", authMiddleware, reportsController.exportYearReport);
 
-router.get(
-  "/school-years",
-  authMiddleware,
-  schoolYearController.getSchoolYears
-);
-router.get(
-  "/school-years/active",
-  authMiddleware,
-  schoolYearController.getActiveSchoolYear
-);
-router.get(
-  "/school-years/:year",
-  authMiddleware,
-  schoolYearController.getSchoolYearData
-);
-router.post(
-  "/school-years",
-  authMiddleware,
-  schoolYearController.createSchoolYear
-);
-router.post(
-  "/school-years/finish",
-  authMiddleware,
-  schoolYearController.finishSchoolYear
-);
-router.delete(
-  "/school-years/:year",
-  authMiddleware,
-  schoolYearController.deleteSchoolYear
-);
+// ✅ Route có :id phải đặt SAU các route cụ thể
+router.get("/reports/teacher/:id", authMiddleware, reportsController.getTeacherReport);
+
+// ==================== SCHOOL YEAR ROUTES ====================
+router.get("/school-years", authMiddleware, schoolYearController.getSchoolYears);
+router.get("/school-years/active", authMiddleware, schoolYearController.getActiveSchoolYear);
+router.get("/school-years/:year", authMiddleware, schoolYearController.getSchoolYearData);
+router.post("/school-years", authMiddleware, schoolYearController.createSchoolYear);
+router.post("/school-years/finish", authMiddleware, schoolYearController.finishSchoolYear);
+router.delete("/school-years/:year", authMiddleware, schoolYearController.deleteSchoolYear);
 
 module.exports = router;

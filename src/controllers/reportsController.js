@@ -45,16 +45,23 @@ const getTeacherReport = asyncHandler(async (req, res) => {
 });
 
 /**
- * ✅ FIX: Xuất Excel - UNIFIED ENDPOINT
+ * ✅ FIX: Xuất Excel - UNIFIED ENDPOINT - LẤY SCHOOLYEAR TỪ QUERY
  * GET /api/reports/export?teacherId=...&schoolYear=...&type=...&weekId=...
  */
 const exportReport = asyncHandler(async (req, res) => {
   try {
-    console.log("📋 exportReport START - Query params:", req.query);
+    // ✅ DEBUG INFO
+    console.log("🎯 exportReport CONTROLLER CALLED");
+    console.log("📋 Query params:", req.query);
+    console.log("👤 User info:", {
+      userId: req.userId,
+      email: req.user?.email,
+      role: req.user?.role
+    });
 
     const { teacherId, teacherIds, schoolYear, type = 'bc', bcNumber, weekId, weekIds, semester } = req.query;
 
-    // ✅ FIX 1: Xử lý teacherId/teacherIds an toàn
+    // ✅ Xử lý teacherId/teacherIds
     let targetTeacherIds;
     if (teacherIds) {
       try {
@@ -70,13 +77,13 @@ const exportReport = asyncHandler(async (req, res) => {
       );
     }
 
+    // ✅ KIỂM TRA SCHOOLYEAR - BẮT BUỘC PHẢI CÓ
     if (!schoolYear) {
       return res.status(STATUS_CODES.BAD_REQUEST).json(
-        badRequestResponse("schoolYear là bắt buộc")
+        badRequestResponse("schoolYear là bắt buộc (VD: 2024-2025)")
       );
     }
 
-    // ✅ FIX 2: Log debug
     console.log("📊 Export Debug Info:", {
       targetTeacherIds,
       schoolYear,
@@ -100,7 +107,7 @@ const exportReport = asyncHandler(async (req, res) => {
     }
     if (semester) options.semester = parseInt(semester);
 
-    // ✅ FIX 3: Gọi service
+    // ✅ Gọi service với schoolYear từ query
     const result = await reportsService.exportReport(targetTeacherIds, schoolYear, options);
 
     console.log("📊 Export Result:", {
@@ -114,7 +121,7 @@ const exportReport = asyncHandler(async (req, res) => {
       const statusCode = result.statusCode || 500;
       if (statusCode === 404) {
         return res.status(404).json(
-          notFoundResponse(`${result.message}\n\nChitiết: teacherId=${targetTeacherIds.join(',')}, type=${type}, schoolYear=${schoolYear}`)
+          notFoundResponse(`${result.message}\n\nChi tiết: teacherId=${targetTeacherIds.join(',')}, type=${type}, schoolYear=${schoolYear}`)
         );
       }
       return res.status(statusCode).json(
@@ -152,6 +159,11 @@ const exportReport = asyncHandler(async (req, res) => {
 const exportMonthReport = asyncHandler(async (req, res) => {
   const { teacherId, teacherIds, schoolYear, month, bcNumber } = req.query;
   
+  // ✅ KIỂM TRA SCHOOLYEAR
+  if (!schoolYear) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("schoolYear là bắt buộc"));
+  }
+  
   let targetIds;
   if (teacherIds) {
     try { targetIds = JSON.parse(teacherIds); } catch (e) { targetIds = [teacherId]; }
@@ -159,9 +171,6 @@ const exportMonthReport = asyncHandler(async (req, res) => {
     targetIds = teacherId;
   }
 
-  if (!schoolYear) {
-    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("schoolYear là bắt buộc"));
-  }
   if (!month && !bcNumber) {
     return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("month hoặc bcNumber là bắt buộc"));
   }
@@ -193,13 +202,18 @@ const exportWeekReport = asyncHandler(async (req, res) => {
     return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("weekId hoặc weekIds là bắt buộc"));
   }
 
+  // ✅ KIỂM TRA SCHOOLYEAR
+  if (!schoolYear) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("schoolYear là bắt buộc"));
+  }
+
   let result;
   if (weekIds) {
     let weekIdArray;
     try { weekIdArray = JSON.parse(weekIds); } catch (e) { weekIdArray = [weekId]; }
-    result = await reportsService.exportWeekRangeReport(teacherId, weekIdArray);
+    result = await reportsService.exportWeekRangeReport(teacherId, weekIdArray, schoolYear);
   } else {
-    result = await reportsService.exportWeekReport(teacherId, weekId);
+    result = await reportsService.exportWeekReport(teacherId, weekId, schoolYear);
   }
 
   if (!result.success) {
@@ -208,7 +222,7 @@ const exportWeekReport = asyncHandler(async (req, res) => {
     );
   }
 
-  const fileName = `BaoCaoTuan.xlsx`;
+  const fileName = `BaoCaoTuan_${schoolYear}.xlsx`;
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
