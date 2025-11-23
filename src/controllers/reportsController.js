@@ -8,430 +8,233 @@ const {
   STATUS_CODES,
 } = require("../helper/createResponse.helper");
 
-const VALID_TYPES = ["month", "week", "semester", "year", "bc"];
-
 /**
- * Lấy báo cáo giáo viên theo loại
- * GET /api/reports/teacher/:id?type=...&...
+ * Lấy báo cáo giáo viên (JSON)
+ * GET /api/reports/teacher/:id?type=...&schoolYear=...
  */
 const getTeacherReport = asyncHandler(async (req, res) => {
   const { id: teacherId } = req.params;
-  const { type, schoolYear, month, weekId, semester, bcNumber } = req.query;
+  const { type = 'year', schoolYear, month, weekId, semester, bcNumber } = req.query;
 
-  // Validation cơ bản
   if (!teacherId) {
-    return res
-      .status(STATUS_CODES.BAD_REQUEST)
-      .json(badRequestResponse("teacherId là bắt buộc"));
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherId là bắt buộc"));
   }
 
-  if (!type) {
-    return res
-      .status(STATUS_CODES.BAD_REQUEST)
-      .json(badRequestResponse("type là bắt buộc (month|week|semester|year|bc)"));
-  }
-
-  if (!VALID_TYPES.includes(type)) {
-    return res
-      .status(STATUS_CODES.BAD_REQUEST)
-      .json(badRequestResponse(`type không hợp lệ. Cho phép: ${VALID_TYPES.join(', ')}`));
-  }
-
-  // Validation theo từng type
-  if (type === "bc") {
-    if (!schoolYear || !bcNumber) {
-      return res
-        .status(STATUS_CODES.BAD_REQUEST)
-        .json(badRequestResponse("schoolYear và bcNumber là bắt buộc cho báo cáo BC"));
-    }
-  }
-
-  if (type === "month") {
-    if (!schoolYear || !month) {
-      return res
-        .status(STATUS_CODES.BAD_REQUEST)
-        .json(badRequestResponse("schoolYear và month là bắt buộc cho báo cáo tháng"));
-    }
-  }
-
-  if (type === "week") {
-    if (!weekId) {
-      return res
-        .status(STATUS_CODES.BAD_REQUEST)
-        .json(badRequestResponse("weekId là bắt buộc cho báo cáo tuần"));
-    }
-  }
-
-  if (type === "semester") {
-    if (!schoolYear || !semester) {
-      return res
-        .status(STATUS_CODES.BAD_REQUEST)
-        .json(badRequestResponse("schoolYear và semester là bắt buộc cho báo cáo học kỳ"));
-    }
-  }
-
-  if (type === "year") {
-    if (!schoolYear) {
-      return res
-        .status(STATUS_CODES.BAD_REQUEST)
-        .json(badRequestResponse("schoolYear là bắt buộc cho báo cáo năm"));
-    }
-  }
-
-  // Xử lý BC report
-  if (type === "bc") {
-    const result = await reportsService.getBCReport(
-      teacherId,
-      schoolYear,
-      parseInt(bcNumber)
-    );
-
+  const filters = { schoolYear, month, weekId, semester };
+  
+  if (type === 'bc' && bcNumber) {
+    const result = await reportsService.getBCReport(teacherId, schoolYear, parseInt(bcNumber));
     if (!result.success) {
-      const statusCode = result.statusCode || STATUS_CODES.INTERNAL_SERVER_ERROR;
-      if (statusCode === STATUS_CODES.NOT_FOUND) {
-        return res.status(STATUS_CODES.NOT_FOUND).json(notFoundResponse(result.message));
-      }
-      return res.status(statusCode).json(serverErrorResponse(result.message));
+      return res.status(result.statusCode || 500).json(
+        result.statusCode === 404 ? notFoundResponse(result.message) : serverErrorResponse(result.message)
+      );
     }
-
     return res.json(successResponse("Lấy báo cáo BC thành công", result.data));
   }
 
-  // Xử lý các loại report khác
-  const filters = { schoolYear, month, weekId, semester };
-  const result = await reportsService.getTeacherReport(
-    teacherId,
-    type,
-    filters
-  );
-
+  const result = await reportsService.getTeacherReport(teacherId, type, filters);
   if (!result.success) {
-    const statusCode = result.statusCode || STATUS_CODES.INTERNAL_SERVER_ERROR;
-
-    if (statusCode === STATUS_CODES.NOT_FOUND) {
-      return res.status(STATUS_CODES.NOT_FOUND).json(notFoundResponse(result.message));
-    }
-
-    if (statusCode === STATUS_CODES.BAD_REQUEST) {
-      return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse(result.message));
-    }
-
-    return res.status(statusCode).json(serverErrorResponse(result.message));
+    return res.status(result.statusCode || 500).json(
+      result.statusCode === 404 ? notFoundResponse(result.message) : serverErrorResponse(result.message)
+    );
   }
 
-  return res.json(
-    successResponse("Lấy báo cáo thành công", result.data)
-  );
+  return res.json(successResponse("Lấy báo cáo thành công", result.data));
 });
 
 /**
- * Xuất Excel báo cáo theo tháng HOẶC BC
- * GET /api/reports/export/month?teacherId=...&schoolYear=...&month=... hoặc &bcNumber=...
+ * Xuất Excel - UNIFIED ENDPOINT
+ * GET /api/reports/export?teacherId=...&schoolYear=...&type=...
+ * 
+ * Params:
+ * - teacherId hoặc teacherIds (JSON array)
+ * - schoolYear: bắt buộc
+ * - type: bc|week|semester|year (mặc định: bc)
+ * - bcNumber: số BC (nếu type=bc)
+ * - weekId: ID tuần (nếu type=week)
+ * - weekIds: JSON array IDs tuần (nếu type=week)
+ * - semester: 1 hoặc 2 (nếu type=semester)
  */
-const exportMonthReport = asyncHandler(async (req, res) => {
-  const { teacherId, schoolYear, month, bcNumber } = req.query;
+const exportReport = asyncHandler(async (req, res) => {
+  const { teacherId, teacherIds, schoolYear, type = 'bc', bcNumber, weekId, weekIds, semester } = req.query;
 
-  // Validation cơ bản
-  if (!teacherId || !schoolYear) {
-    return res
-      .status(STATUS_CODES.BAD_REQUEST)
-      .json(badRequestResponse("teacherId và schoolYear là bắt buộc"));
-  }
-
-  // Phải có ít nhất 1 trong 2: month hoặc bcNumber
-  if (!month && !bcNumber) {
-    return res
-      .status(STATUS_CODES.BAD_REQUEST)
-      .json(badRequestResponse("Phải cung cấp month hoặc bcNumber"));
-  }
-
-  // Không cho phép cả 2 cùng lúc
-  if (month && bcNumber) {
-    return res
-      .status(STATUS_CODES.BAD_REQUEST)
-      .json(badRequestResponse("Chỉ được chọn month HOẶC bcNumber, không được cả hai"));
-  }
-
-  // Nếu có bcNumber → xuất theo BC
-  if (bcNumber) {
-    const result = await reportsService.exportBCReport(
-      teacherId,
-      schoolYear,
-      parseInt(bcNumber)
-    );
-
-    if (!result.success) {
-      const statusCode = result.statusCode || STATUS_CODES.INTERNAL_SERVER_ERROR;
-      if (statusCode === STATUS_CODES.NOT_FOUND) {
-        return res.status(STATUS_CODES.NOT_FOUND).json(notFoundResponse(result.message));
-      }
-      return res.status(statusCode).json(serverErrorResponse(result.message));
+  // Xử lý teacherId/teacherIds
+  let targetTeacherIds;
+  if (teacherIds) {
+    try {
+      targetTeacherIds = Array.isArray(teacherIds) ? teacherIds : JSON.parse(teacherIds);
+    } catch (e) {
+      return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherIds phải là JSON array hợp lệ"));
     }
-
-    const workbook = result.data.workbook;
-    const fileName = `BaoCao_BC${bcNumber}_${schoolYear}.xlsx`;
-
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    );
-    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-
-    await workbook.xlsx.write(res);
-    return res.end();
+  } else if (teacherId) {
+    targetTeacherIds = [teacherId];
+  } else {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherId hoặc teacherIds là bắt buộc"));
   }
 
-  // Xuất theo tháng
-  const result = await reportsService.exportMonthReport(
-    teacherId,
-    schoolYear,
-    parseInt(month)
-  );
+  if (!schoolYear) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("schoolYear là bắt buộc"));
+  }
+
+  // Build options
+  const options = { type };
+  if (bcNumber) options.bcNumber = parseInt(bcNumber);
+  if (weekId) options.weekId = weekId;
+  if (weekIds) {
+    try {
+      options.weekIds = Array.isArray(weekIds) ? weekIds : JSON.parse(weekIds);
+    } catch (e) {
+      return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("weekIds phải là JSON array hợp lệ"));
+    }
+  }
+  if (semester) options.semester = parseInt(semester);
+
+  // Export
+  const result = await reportsService.exportReport(targetTeacherIds, schoolYear, options);
 
   if (!result.success) {
-    const statusCode = result.statusCode || STATUS_CODES.INTERNAL_SERVER_ERROR;
-
-    if (statusCode === STATUS_CODES.NOT_FOUND) {
-      return res.status(STATUS_CODES.NOT_FOUND).json(notFoundResponse(result.message));
-    }
-
-    return res.status(statusCode).json(serverErrorResponse(result.message));
+    return res.status(result.statusCode || 500).json(
+      result.statusCode === 404 ? notFoundResponse(result.message) : serverErrorResponse(result.message)
+    );
   }
 
-  const workbook = result.data.workbook;
-  const fileName = `BaoCaoThang_${month}_${schoolYear}.xlsx`;
+  // Build filename
+  let fileName = `BaoCao_${schoolYear}`;
+  if (type === 'bc' && bcNumber) fileName = `BC${bcNumber}_${schoolYear}`;
+  else if (type === 'week') fileName = `BaoCaoTuan_${schoolYear}`;
+  else if (type === 'semester') fileName = `HocKy${semester}_${schoolYear}`;
+  else if (type === 'year') fileName = `CaNam_${schoolYear}`;
+  
+  if (targetTeacherIds.length > 1) fileName += `_${targetTeacherIds.length}GV`;
+  fileName += '.xlsx';
 
-  res.setHeader(
-    "Content-Type",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  );
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
-  await workbook.xlsx.write(res);
+  await result.data.workbook.xlsx.write(res);
   res.end();
 });
 
-/**
- * Xuất Excel báo cáo theo tuần
- * GET /api/reports/export/week?teacherId=...&weekId=... hoặc &weekIds=[...]
- * Hỗ trợ: 
- * - weekId: 1 tuần đơn lẻ
- * - weekIds: nhiều tuần (tự động group theo BC)
- */
+// ==================== BACKWARD COMPATIBLE ENDPOINTS ====================
+
+const exportMonthReport = asyncHandler(async (req, res) => {
+  const { teacherId, teacherIds, schoolYear, month, bcNumber } = req.query;
+  
+  let targetIds;
+  if (teacherIds) {
+    try { targetIds = JSON.parse(teacherIds); } catch (e) { targetIds = [teacherId]; }
+  } else {
+    targetIds = teacherId;
+  }
+
+  if (!schoolYear) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("schoolYear là bắt buộc"));
+  }
+  if (!month && !bcNumber) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("month hoặc bcNumber là bắt buộc"));
+  }
+
+  const bc = bcNumber ? parseInt(bcNumber) : parseInt(month);
+  const result = await reportsService.exportBCReport(targetIds, schoolYear, bc);
+
+  if (!result.success) {
+    return res.status(result.statusCode || 500).json(
+      result.statusCode === 404 ? notFoundResponse(result.message) : serverErrorResponse(result.message)
+    );
+  }
+
+  const fileName = `BC${bc}_${schoolYear}.xlsx`;
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+
+  await result.data.workbook.xlsx.write(res);
+  res.end();
+});
+
 const exportWeekReport = asyncHandler(async (req, res) => {
-  const { teacherId, weekId, weekIds } = req.query;
+  const { teacherId, weekId, weekIds, schoolYear } = req.query;
 
   if (!teacherId) {
-    return res
-      .status(STATUS_CODES.BAD_REQUEST)
-      .json(badRequestResponse("teacherId là bắt buộc"));
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherId là bắt buộc"));
   }
-
-  // Phải có ít nhất 1 trong 2
   if (!weekId && !weekIds) {
-    return res
-      .status(STATUS_CODES.BAD_REQUEST)
-      .json(badRequestResponse("Phải cung cấp weekId hoặc weekIds"));
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("weekId hoặc weekIds là bắt buộc"));
   }
 
-  // Nếu có weekIds (nhiều tuần) → tự động group theo BC
+  let result;
   if (weekIds) {
     let weekIdArray;
-    try {
-      weekIdArray = Array.isArray(weekIds) ? weekIds : JSON.parse(weekIds);
-    } catch (error) {
-      return res
-        .status(STATUS_CODES.BAD_REQUEST)
-        .json(badRequestResponse("weekIds phải là mảng JSON hợp lệ"));
-    }
-
-    if (!Array.isArray(weekIdArray) || weekIdArray.length === 0) {
-      return res
-        .status(STATUS_CODES.BAD_REQUEST)
-        .json(badRequestResponse("weekIds phải là mảng không rỗng"));
-    }
-
-    const result = await reportsService.exportWeekRangeReport(
-      teacherId,
-      weekIdArray
-    );
-
-    if (!result.success) {
-      const statusCode = result.statusCode || STATUS_CODES.INTERNAL_SERVER_ERROR;
-      if (statusCode === STATUS_CODES.NOT_FOUND) {
-        return res.status(STATUS_CODES.NOT_FOUND).json(notFoundResponse(result.message));
-      }
-      return res.status(statusCode).json(serverErrorResponse(result.message));
-    }
-
-    const workbook = result.data.workbook;
-    const bcInfo = result.data.bcInfo;
-    
-    // Tên file dựa vào số BC
-    let fileName;
-    if (bcInfo.length === 1) {
-      const weeks = bcInfo[0].weeks.map(w => w.weekNumber).join('-');
-      fileName = `BaoCao_BC${bcInfo[0].bcNumber}_Tuan${weeks}.xlsx`;
-    } else {
-      const bcNumbers = bcInfo.map(bc => bc.bcNumber).join('-');
-      fileName = `BaoCao_BC${bcNumbers}_NhieuThang.xlsx`;
-    }
-
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    );
-    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-
-    await workbook.xlsx.write(res);
-    return res.end();
+    try { weekIdArray = JSON.parse(weekIds); } catch (e) { weekIdArray = [weekId]; }
+    result = await reportsService.exportWeekRangeReport(teacherId, weekIdArray);
+  } else {
+    result = await reportsService.exportWeekReport(teacherId, weekId);
   }
-
-  // Xuất 1 tuần đơn lẻ
-  const result = await reportsService.exportWeekReport(teacherId, weekId);
 
   if (!result.success) {
-    const statusCode = result.statusCode || STATUS_CODES.INTERNAL_SERVER_ERROR;
-
-    if (statusCode === STATUS_CODES.NOT_FOUND) {
-      return res.status(STATUS_CODES.NOT_FOUND).json(notFoundResponse(result.message));
-    }
-
-    return res.status(statusCode).json(serverErrorResponse(result.message));
+    return res.status(result.statusCode || 500).json(
+      result.statusCode === 404 ? notFoundResponse(result.message) : serverErrorResponse(result.message)
+    );
   }
 
-  const workbook = result.data.workbook;
-  const fileName = `BaoCaoTuan_${weekId}.xlsx`;
-
-  res.setHeader(
-    "Content-Type",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  );
+  const fileName = `BaoCaoTuan.xlsx`;
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
-  await workbook.xlsx.write(res);
+  await result.data.workbook.xlsx.write(res);
   res.end();
 });
 
-/**
- * Xuất Excel báo cáo theo học kỳ
- * GET /api/reports/export/semester?teacherId=...&schoolYear=...&semester=...
- */
 const exportSemesterReport = asyncHandler(async (req, res) => {
   const { teacherId, schoolYear, semester } = req.query;
 
   if (!teacherId || !schoolYear || !semester) {
-    return res
-      .status(STATUS_CODES.BAD_REQUEST)
-      .json(badRequestResponse("teacherId, schoolYear và semester là bắt buộc"));
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherId, schoolYear, semester là bắt buộc"));
   }
 
-  const semesterNum = parseInt(semester);
-  if (semesterNum !== 1 && semesterNum !== 2) {
-    return res
-      .status(STATUS_CODES.BAD_REQUEST)
-      .json(badRequestResponse("semester phải là 1 hoặc 2"));
-  }
-
-  const result = await reportsService.exportSemesterReport(
-    teacherId,
-    schoolYear,
-    semesterNum
-  );
+  const result = await reportsService.exportSemesterReport(teacherId, schoolYear, parseInt(semester));
 
   if (!result.success) {
-    const statusCode = result.statusCode || STATUS_CODES.INTERNAL_SERVER_ERROR;
-
-    if (statusCode === STATUS_CODES.NOT_FOUND) {
-      return res.status(STATUS_CODES.NOT_FOUND).json(notFoundResponse(result.message));
-    }
-
-    return res.status(statusCode).json(serverErrorResponse(result.message));
+    return res.status(result.statusCode || 500).json(
+      result.statusCode === 404 ? notFoundResponse(result.message) : serverErrorResponse(result.message)
+    );
   }
 
-  const workbook = result.data.workbook;
-  const fileName = `BaoCaoHocKy${semester}_${schoolYear}.xlsx`;
-
-  res.setHeader(
-    "Content-Type",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  );
+  const fileName = `HocKy${semester}_${schoolYear}.xlsx`;
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
-  await workbook.xlsx.write(res);
+  await result.data.workbook.xlsx.write(res);
   res.end();
 });
 
-/**
- * Xuất Excel báo cáo năm
- * GET /api/reports/export/year?teacherId=...&schoolYear=...&allBC=true
- * Hỗ trợ: allBC=true để xuất tất cả BC trong năm
- */
 const exportYearReport = asyncHandler(async (req, res) => {
   const { teacherId, schoolYear, allBC } = req.query;
 
   if (!teacherId || !schoolYear) {
-    return res
-      .status(STATUS_CODES.BAD_REQUEST)
-      .json(badRequestResponse("teacherId và schoolYear là bắt buộc"));
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherId, schoolYear là bắt buộc"));
   }
 
-  // Nếu có allBC=true → xuất tất cả BC
-  if (allBC === 'true' || allBC === true) {
-    const result = await reportsService.exportAllBCReport(teacherId, schoolYear);
-
-    if (!result.success) {
-      const statusCode = result.statusCode || STATUS_CODES.INTERNAL_SERVER_ERROR;
-      if (statusCode === STATUS_CODES.NOT_FOUND) {
-        return res.status(STATUS_CODES.NOT_FOUND).json(notFoundResponse(result.message));
-      }
-      return res.status(statusCode).json(serverErrorResponse(result.message));
-    }
-
-    const workbook = result.data.workbook;
-    const fileName = `BaoCaoTongHopBC_${schoolYear}.xlsx`;
-
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    );
-    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-
-    await workbook.xlsx.write(res);
-    return res.end();
-  }
-
-  // Xuất báo cáo năm thông thường
-  const result = await reportsService.exportYearReport(
-    teacherId,
-    schoolYear
-  );
+  const result = allBC === 'true' 
+    ? await reportsService.exportAllBCReport(teacherId, schoolYear)
+    : await reportsService.exportYearReport(teacherId, schoolYear);
 
   if (!result.success) {
-    const statusCode = result.statusCode || STATUS_CODES.INTERNAL_SERVER_ERROR;
-
-    if (statusCode === STATUS_CODES.NOT_FOUND) {
-      return res.status(STATUS_CODES.NOT_FOUND).json(notFoundResponse(result.message));
-    }
-
-    return res.status(statusCode).json(serverErrorResponse(result.message));
+    return res.status(result.statusCode || 500).json(
+      result.statusCode === 404 ? notFoundResponse(result.message) : serverErrorResponse(result.message)
+    );
   }
 
-  const workbook = result.data.workbook;
   const fileName = `BaoCaoNam_${schoolYear}.xlsx`;
-
-  res.setHeader(
-    "Content-Type",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  );
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
-  await workbook.xlsx.write(res);
+  await result.data.workbook.xlsx.write(res);
   res.end();
 });
 
 module.exports = {
   getTeacherReport,
+  exportReport,
   exportMonthReport,
   exportWeekReport,
   exportSemesterReport,

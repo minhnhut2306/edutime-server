@@ -138,6 +138,11 @@ router.get(
   authMiddleware,
   reportsController.exportYearReport
 );
+router.get(
+  "/reports/export",
+  authMiddleware,
+  reportsController.exportReport
+);
 
 router.get(
   "/school-years",
