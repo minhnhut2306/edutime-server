@@ -1,6 +1,23 @@
 const Class = require("../models/classesModel");
 const XLSX = require("xlsx");
 
+/**
+ * Tự động trích xuất khối từ tên lớp
+ * VD: "10A3" -> "10", "6B" -> "6", "11A1" -> "11", "12C2" -> "12"
+ */
+const extractGradeFromClassName = (className) => {
+  if (!className) return null;
+  
+  // Regex để tìm số ở đầu tên lớp (1-2 chữ số)
+  const match = className.trim().match(/^(\d{1,2})/);
+  
+  if (match) {
+    return match[1]; // Trả về phần số (khối)
+  }
+  
+  return null;
+};
+
 const getClasses = async (filters = {}) => {
   const query = {};
 
@@ -34,14 +51,25 @@ const getClassById = async (id) => {
 const createClass = async (data) => {
   const { name, grade, studentCount } = data;
 
-  if (!name || !grade) {
-    throw new Error("Class name and grade are required");
+  if (!name) {
+    throw new Error("Class name is required");
   }
 
   const trimmedName = name.toString().trim();
 
   if (!trimmedName) {
     throw new Error("Class name cannot be empty");
+  }
+
+  // ✅ Tự động trích xuất khối từ tên lớp nếu không được cung cấp
+  let finalGrade = grade;
+  if (!finalGrade) {
+    const extractedGrade = extractGradeFromClassName(trimmedName);
+    if (extractedGrade) {
+      finalGrade = extractedGrade;
+    } else {
+      throw new Error("Không thể xác định khối từ tên lớp. Vui lòng nhập khối hoặc đặt tên lớp theo định dạng: 10A1, 11B2, 6C,...");
+    }
   }
 
   const existingClass = await Class.findOne({ name: trimmedName });
@@ -51,7 +79,7 @@ const createClass = async (data) => {
 
   const classInfo = await Class.create({
     name: trimmedName,
-    grade: grade.toString().trim(),
+    grade: finalGrade.toString().trim(),
     studentCount: studentCount ? parseInt(studentCount) : 0,
   });
 
@@ -81,6 +109,14 @@ const updateClass = async (id, data) => {
         throw new Error("Class name already exists");
       }
       data.name = trimmedName;
+      
+      // ✅ Tự động cập nhật khối nếu tên lớp thay đổi và không có grade mới
+      if (!data.grade) {
+        const extractedGrade = extractGradeFromClassName(trimmedName);
+        if (extractedGrade) {
+          data.grade = extractedGrade;
+        }
+      }
     }
   }
 
@@ -150,14 +186,14 @@ const importClasses = async (file) => {
 
     try {
       const name = getRowValue(row, "Tên lớp");
-      const grade = getRowValue(row, "Khối");
+      let grade = getRowValue(row, "Khối");
       const studentCount = getRowValue(row, "Sĩ số");
 
-      if (!name || !grade) {
+      if (!name) {
         results.failed.push({
           row: rowNumber,
           data: row,
-          reason: "Thiếu thông tin bắt buộc (Tên lớp, Khối)",
+          reason: "Thiếu tên lớp",
         });
         continue;
       }
@@ -171,6 +207,21 @@ const importClasses = async (file) => {
           reason: "Tên lớp không được để trống",
         });
         continue;
+      }
+
+      // ✅ Tự động trích xuất khối nếu không có trong Excel
+      if (!grade) {
+        const extractedGrade = extractGradeFromClassName(trimmedName);
+        if (extractedGrade) {
+          grade = extractedGrade;
+        } else {
+          results.failed.push({
+            row: rowNumber,
+            data: row,
+            reason: `Không thể xác định khối từ tên lớp "${trimmedName}". Vui lòng nhập khối hoặc đặt tên theo định dạng: 10A1, 11B2,...`,
+          });
+          continue;
+        }
       }
 
       const existingClass = await Class.findOne({ name: trimmedName });
