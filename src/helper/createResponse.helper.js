@@ -82,22 +82,3 @@ module.exports = {
     conflictResponse,
     serverErrorResponse
 };
-
-// ============================================
-// VÍ DỤ SỬ DỤNG
-// ============================================
-// const { successResponse, errorResponse, notFoundResponse, STATUS_CODES } = require('./helper/createResponse.helper');
-//
-// res.json(successResponse('Lấy dữ liệu thành công', users));
-// res.status(201).json(createdResponse('Tạo user thành công', newUser));
-// res.status(404).json(notFoundResponse('Không tìm thấy user'));
-// res.status(STATUS_CODES.CONFLICT).json(errorResponse('Email đã tồn tại', STATUS_CODES.CONFLICT));
-// res.status(400).json(badRequestResponse('Dữ liệu không hợp lệ', { errors: ['Email không đúng định dạng'] }));
-//
-// ============================================
-// HTTP STATUS CODES
-// ============================================
-// 2xx: 200 OK, 201 Created, 204 No Content
-// 3xx: 301 Moved, 302 Found, 304 Not Modified
-// 4xx: 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found, 409 Conflict, 422 Unprocessable, 429 Too Many
-// 5xx: 500 Internal Error, 502 Bad Gateway, 503 Service Unavailable

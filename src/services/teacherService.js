@@ -48,14 +48,12 @@ const getTeacherById = async (id) => {
 const createTeacher = async (data) => {
   const { name, phone, userId, subjectIds, mainClassId } = data;
 
-  // Chỉ bắt buộc name, subjectIds và mainClassId
   if (!name || !subjectIds || !mainClassId) {
     throw new Error("Name, subjectIds và mainClassId là bắt buộc");
   }
 
   const checks = [];
 
-  // Kiểm tra phone nếu có
   if (phone) {
     checks.push(
       Teacher.findOne({ phone }).then((existing) => {
@@ -64,7 +62,6 @@ const createTeacher = async (data) => {
     );
   }
 
-  // Kiểm tra userId nếu có
   if (userId) {
     checks.push(
       Teacher.findOne({ userId }).then((existing) => {
@@ -104,7 +101,6 @@ const updateTeacher = async (id, data) => {
 
   const checks = [];
 
-  // Kiểm tra phone nếu có và khác với phone hiện tại
   if (data.phone && (!teacher.phone || data.phone !== teacher.phone)) {
     checks.push(
       Teacher.findOne({ phone: data.phone }).then((existing) => {
@@ -115,7 +111,6 @@ const updateTeacher = async (id, data) => {
     );
   }
 
-  // Kiểm tra userId nếu có
   if (data.userId) {
     checks.push(
       Teacher.findOne({ userId: data.userId }).then((existing) => {
@@ -146,26 +141,22 @@ const updateTeacher = async (id, data) => {
   return updatedTeacher;
 };
 
-// Hàm mới: Cập nhật userId cho giáo viên
 const updateTeacherUserId = async (teacherId, userId) => {
   const teacher = await Teacher.findById(teacherId);
   if (!teacher) {
     throw new Error("Teacher not found");
   }
 
-  // Kiểm tra user tồn tại
   const user = await User.findById(userId);
   if (!user) {
     throw new Error("User not found");
   }
 
-  // Kiểm tra user đã được gán cho giáo viên khác chưa
   const existingTeacher = await Teacher.findOne({ userId });
   if (existingTeacher && existingTeacher._id.toString() !== teacherId) {
     throw new Error("User already assigned to another teacher");
   }
 
-  // Cập nhật userId
   teacher.userId = userId;
   teacher.updatedAt = Date.now();
   await teacher.save();
@@ -215,7 +206,6 @@ const getRowValue = (row, fieldName) => {
   return key ? row[key] : null;
 };
 
-// Hàm loại bỏ dấu tiếng Việt
 const removeVietnameseTones = (str) => {
   if (!str) return "";
   str = str.toLowerCase().trim();
@@ -229,16 +219,13 @@ const removeVietnameseTones = (str) => {
   return str;
 };
 
-// Hàm tìm môn học linh hoạt (không phân biệt hoa thường, dấu)
 const findSubjectFlexible = async (subjectName) => {
   if (!subjectName) return null;
 
   const normalizedName = removeVietnameseTones(subjectName);
 
-  // Tìm tất cả môn học
   const allSubjects = await Subject.find({});
 
-  // Tìm môn học khớp
   const subject = allSubjects.find((s) => {
     const dbName = removeVietnameseTones(s.name);
     return dbName === normalizedName;
@@ -247,16 +234,13 @@ const findSubjectFlexible = async (subjectName) => {
   return subject;
 };
 
-// Hàm tìm lớp linh hoạt (không phân biệt hoa thường, dấu)
 const findClassFlexible = async (className) => {
   if (!className) return null;
 
   const normalizedName = removeVietnameseTones(className);
 
-  // Tìm tất cả lớp
   const allClasses = await Class.find({});
 
-  // Tìm lớp khớp
   const classInfo = allClasses.find((c) => {
     const dbName = removeVietnameseTones(c.name);
     return dbName === normalizedName;
@@ -264,6 +248,7 @@ const findClassFlexible = async (className) => {
 
   return classInfo;
 };
+
 const importTeachers = async (file) => {
   if (!file) {
     throw new Error("No file uploaded");
@@ -295,10 +280,8 @@ const importTeachers = async (file) => {
       const subjectNames = getRowValue(row, "Môn dạy");
       const className = getRowValue(row, "Lớp chủ nhiệm");
 
-      // Xử lý số điện thoại - thêm số 0 nếu thiếu
       if (phone) {
         phone = String(phone).trim();
-        // SĐT Việt Nam 10 số, nếu có 9 số và không bắt đầu bằng 0 thì thêm 0
         if (phone.length === 9 && !phone.startsWith("0")) {
           phone = "0" + phone;
         }
@@ -314,7 +297,6 @@ const importTeachers = async (file) => {
         continue;
       }
 
-      // Kiểm tra phone trùng
       if (phone && phone !== "") {
         const existingTeacher = await Teacher.findOne({ phone: phone });
         if (existingTeacher) {
@@ -327,7 +309,6 @@ const importTeachers = async (file) => {
         }
       }
 
-      // Xử lý nhiều môn học
       const subjectNameList = subjectNames.split(",").map((s) => s.trim());
       const subjectIds = [];
       let missingSubject = null;
@@ -359,7 +340,6 @@ const importTeachers = async (file) => {
         continue;
       }
 
-      // Tìm lớp chủ nhiệm
       const classInfo = await findClassFlexible(className);
       if (!classInfo) {
         results.failed.push({
@@ -370,7 +350,6 @@ const importTeachers = async (file) => {
         continue;
       }
 
-      // Tạo giáo viên
       const teacher = await Teacher.create({
         teacherCode,
         name: name.trim(),

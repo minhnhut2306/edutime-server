@@ -1,5 +1,3 @@
-// ==================== UPDATED: src/controllers/reportsController.js ====================
-
 const reportsService = require("../services/reportsService");
 const asyncHandler = require("../middleware/asyncHandler");
 const {
@@ -10,10 +8,6 @@ const {
   STATUS_CODES,
 } = require("../helper/createResponse.helper");
 
-/**
- * Lấy báo cáo giáo viên (JSON)
- * GET /api/reports/teacher/:id?type=...&schoolYear=...
- */
 const getTeacherReport = asyncHandler(async (req, res) => {
   const { id: teacherId } = req.params;
   const { type = 'year', schoolYear, month, weekId, semester, bcNumber } = req.query;
@@ -44,27 +38,10 @@ const getTeacherReport = asyncHandler(async (req, res) => {
   return res.json(successResponse("Lấy báo cáo thành công", result.data));
 });
 
-/**
- * ✅ FIX: Xuất Excel - UNIFIED ENDPOINT - LẤY SCHOOLYEAR TỪ QUERY
- * GET /api/reports/export?teacherId=...&schoolYear=...&type=...&weekId=...
- */
 const exportReport = asyncHandler(async (req, res) => {
   try {
-    // ✅ DEBUG INFO
-    console.log("🎯 ========================================");
-    console.log("🎯 exportReport CONTROLLER CALLED");
-    console.log("🎯 ========================================");
-    console.log("📋 Query params:", req.query);
-    console.log("👤 User info:", {
-      userId: req.userId,
-      email: req.user?.email,
-      role: req.user?.role
-    });
-    console.log("🔗 Request URL:", req.originalUrl);
-    console.log("🔗 Request method:", req.method);
     const { teacherId, teacherIds, schoolYear, type = 'bc', bcNumber, weekId, weekIds, semester } = req.query;
 
-    // ✅ Xử lý teacherId/teacherIds
     let targetTeacherIds;
     if (teacherIds) {
       try {
@@ -80,24 +57,12 @@ const exportReport = asyncHandler(async (req, res) => {
       );
     }
 
-    // ✅ KIỂM TRA SCHOOLYEAR - BẮT BUỘC PHẢI CÓ
     if (!schoolYear) {
       return res.status(STATUS_CODES.BAD_REQUEST).json(
         badRequestResponse("schoolYear là bắt buộc (VD: 2024-2025)")
       );
     }
 
-    console.log("📊 Export Debug Info:", {
-      targetTeacherIds,
-      schoolYear,
-      type,
-      bcNumber,
-      weekId,
-      weekIds,
-      semester
-    });
-
-    // Build options
     const options = { type };
     if (bcNumber) options.bcNumber = parseInt(bcNumber);
     if (weekId) options.weekId = weekId;
@@ -110,15 +75,7 @@ const exportReport = asyncHandler(async (req, res) => {
     }
     if (semester) options.semester = parseInt(semester);
 
-    // ✅ Gọi service với schoolYear từ query
     const result = await reportsService.exportReport(targetTeacherIds, schoolYear, options);
-
-    console.log("📊 Export Result:", {
-      success: result.success,
-      statusCode: result.statusCode,
-      message: result.message,
-      hasWorkbook: !!result.data?.workbook
-    });
 
     if (!result.success) {
       const statusCode = result.statusCode || 500;
@@ -132,7 +89,6 @@ const exportReport = asyncHandler(async (req, res) => {
       );
     }
 
-    // Build filename
     let fileName = `BaoCao_${schoolYear}`;
     if (type === 'bc' && bcNumber) fileName = `BC${bcNumber}_${schoolYear}`;
     else if (type === 'week') fileName = `BaoCaoTuan_${schoolYear}`;
@@ -142,27 +98,21 @@ const exportReport = asyncHandler(async (req, res) => {
     if (targetTeacherIds.length > 1) fileName += `_${targetTeacherIds.length}GV`;
     fileName += '.xlsx';
 
-    console.log("📥 Sending file:", fileName);
-
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
     await result.data.workbook.xlsx.write(res);
     res.end();
   } catch (error) {
-    console.error("❌ exportReport ERROR:", error);
     return res.status(500).json(
       serverErrorResponse("Lỗi xuất báo cáo: " + error.message)
     );
   }
 });
 
-// ==================== BACKWARD COMPATIBLE ENDPOINTS ====================
-
 const exportMonthReport = asyncHandler(async (req, res) => {
   const { teacherId, teacherIds, schoolYear, month, bcNumber } = req.query;
   
-  // ✅ KIỂM TRA SCHOOLYEAR
   if (!schoolYear) {
     return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("schoolYear là bắt buộc"));
   }
@@ -205,7 +155,6 @@ const exportWeekReport = asyncHandler(async (req, res) => {
     return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("weekId hoặc weekIds là bắt buộc"));
   }
 
-  // ✅ KIỂM TRA SCHOOLYEAR
   if (!schoolYear) {
     return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("schoolYear là bắt buộc"));
   }

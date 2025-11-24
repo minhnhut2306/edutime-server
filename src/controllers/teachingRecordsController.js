@@ -1,8 +1,3 @@
-/**
- * Controller: teachingRecords.controller.js
- * Contains getTeachingRecords, createTeachingRecord, deleteTeachingRecord
- */
-
 const teachingRecordsService = require("../services/teachingRecordsService");
 const asyncHandler = require("../middleware/asyncHandler");
 const Teacher = require("../models/teacherModel");
@@ -15,21 +10,11 @@ const {
   serverErrorResponse,
 } = require("../helper/createResponse.helper");
 
-// Lấy danh sách bản ghi:
-// - Admin: nếu có teacherId query -> trả bản ghi của teacher đó, nếu không -> trả tất cả
-// - Giáo viên: lấy teacher bằng userId trong token, trả bản ghi của chính họ
 const getTeachingRecords = asyncHandler(async (req, res) => {
   const { teacherId: queryTeacherId } = req.query;
   const role = req.user?.role;
-
-  // Thử nhiều cách lấy userId từ req.user payload
   const userId = req.user?.userId || req.user?._id || req.user?.id || req.user?.sub;
 
-  console.log("🔍 Debug req.user:", req.user);
-  console.log("🔍 Extracted userId:", userId);
-  console.log("🔍 Role:", role);
-
-  // Admin: nếu có queryTeacherId -> trả bản ghi của teacher đó, không có -> trả tất cả
   if (role === "admin") {
     if (queryTeacherId) {
       const result = await teachingRecordsService.getTeachingRecordsByTeacher(queryTeacherId);
@@ -51,20 +36,15 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
     return res.json(successResponse("Lấy danh sách bản ghi thành công", resultAll.data));
   }
 
-  // Non-admin (giáo viên): tự động tìm teacher document theo userId
-  // NOTE: nếu không có userId -> mặc định hiện tại trả lỗi 401/403
   if (!userId) {
-    console.error("❌ Không tìm thấy userId trong req.user:", req.user);
     return res.status(401).json(forbiddenResponse("Không xác định được user"));
   }
 
   const teacherDoc = await Teacher.findOne({ userId: userId });
   if (!teacherDoc) {
-    console.error("❌ Không tìm thấy teacher với userId:", userId);
     return res.status(400).json(badRequestResponse("Tài khoản của bạn chưa được liên kết với giáo viên"));
   }
 
-  // Nếu frontend gửi queryTeacherId, đảm bảo nó trùng với teacherDoc._id
   if (queryTeacherId && queryTeacherId !== teacherDoc._id.toString()) {
     return res.status(400).json(badRequestResponse("Bạn chỉ được xem bản ghi của chính mình"));
   }
@@ -83,7 +63,6 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
   return res.json(successResponse("Lấy danh sách bản ghi thành công", result.data));
 });
 
-// Thêm bản ghi
 const createTeachingRecord = asyncHandler(async (req, res) => {
   const { teacherId, weekId, subjectId, classId, periods, schoolYear } = req.body;
 
@@ -131,11 +110,6 @@ const createTeachingRecord = asyncHandler(async (req, res) => {
   return res.status(201).json(createdResponse("Thêm bản ghi thành công", result.data));
 });
 
-
-
-// Xóa bản ghi:
-// - Admin có thể xóa bất kỳ bản ghi nào
-// - Giáo viên chỉ được xóa bản ghi của chính họ
 const deleteTeachingRecord = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const role = req.user?.role;
@@ -149,9 +123,8 @@ const deleteTeachingRecord = asyncHandler(async (req, res) => {
     return res.status(401).json(forbiddenResponse("Không xác định được user"));
   }
 
-  // Nếu admin => cho phép xóa (service sẽ xử lý admin case)
   if (role === "admin") {
-    const result = await teachingRecordsService.deleteTeachingRecord(id, null /* admin */);
+    const result = await teachingRecordsService.deleteTeachingRecord(id, null);
     if (!result.success) {
       const statusCode = result.statusCode || 500;
       if (statusCode === 404) {
@@ -165,7 +138,6 @@ const deleteTeachingRecord = asyncHandler(async (req, res) => {
     return res.json(successResponse("Xóa bản ghi thành công", result.data));
   }
 
-  // Non-admin: tìm teacher document liên kết với user và truyền teacher._id cho service
   const teacherDoc = await Teacher.findOne({ userId: userId });
   if (!teacherDoc) {
     return res.status(400).json(badRequestResponse("Tài khoản của bạn chưa được liên kết với giáo viên"));
@@ -199,7 +171,6 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
   const role = req.user?.role;
   const userId = req.userId || req.user?.userId || req.user?._id;
 
-  // Admin: can update any; non-admin: must belong to the teacher linked to user
   if (role === "admin") {
     const result = await teachingRecordsService.updateTeachingRecord(id, {
       teacherId,
@@ -208,7 +179,7 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
       classId,
       periods,
       schoolYear,
-    }, null); // null => admin
+    }, null);
     if (!result.success) {
       const statusCode = result.statusCode || 500;
       if (statusCode === 404) return res.status(404).json(notFoundResponse(result.message));
@@ -219,7 +190,6 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
     return res.json(successResponse("Cập nhật bản ghi thành công", result.data));
   }
 
-  // Non-admin
   if (!userId) {
     return res.status(401).json(forbiddenResponse("Không xác định được user"));
   }
@@ -228,7 +198,6 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
     return res.status(400).json(badRequestResponse("Tài khoản của bạn chưa được liên kết với giáo viên"));
   }
 
-  // If req.body.teacherId exists and is different from teacherDoc._id, forbid
   if (teacherId && teacherId !== teacherDoc._id.toString()) {
     return res.status(403).json(forbiddenResponse("Bạn không được chuyển bản ghi cho giáo viên khác"));
   }
@@ -254,7 +223,6 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
 
   return res.json(successResponse("Cập nhật bản ghi thành công", result.data));
 });
-
 
 module.exports = {
   getTeachingRecords,

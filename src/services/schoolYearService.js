@@ -11,7 +11,7 @@ class SchoolYearService {
       .sort({ year: -1 })
       .lean();
     
-    return years; // Trả về array objects có {year, status, ...}
+    return years; 
   }
 
   async getSchoolYearData(year) {

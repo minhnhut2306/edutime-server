@@ -1,11 +1,6 @@
 const { forbiddenResponse } = require("../helper/createResponse.helper");
 
-/**
- * Middleware kiểm tra quyền admin
- * Phải đặt SAU authMiddleware vì cần req.user
- */
 const isAdmin = (req, res, next) => {
-  // req.user đã được set từ authMiddleware
   if (!req.user) {
     return res.status(401).json({
       success: false,

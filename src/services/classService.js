@@ -1,18 +1,13 @@
 const Class = require("../models/classesModel");
 const XLSX = require("xlsx");
 
-/**
- * Tự động trích xuất khối từ tên lớp
- * VD: "10A3" -> "10", "6B" -> "6", "11A1" -> "11", "12C2" -> "12"
- */
 const extractGradeFromClassName = (className) => {
   if (!className) return null;
   
-  // Regex để tìm số ở đầu tên lớp (1-2 chữ số)
   const match = className.trim().match(/^(\d{1,2})/);
   
   if (match) {
-    return match[1]; // Trả về phần số (khối)
+    return match[1];
   }
   
   return null;
@@ -61,7 +56,6 @@ const createClass = async (data) => {
     throw new Error("Class name cannot be empty");
   }
 
-  // ✅ Tự động trích xuất khối từ tên lớp nếu không được cung cấp
   let finalGrade = grade;
   if (!finalGrade) {
     const extractedGrade = extractGradeFromClassName(trimmedName);
@@ -110,7 +104,6 @@ const updateClass = async (id, data) => {
       }
       data.name = trimmedName;
       
-      // ✅ Tự động cập nhật khối nếu tên lớp thay đổi và không có grade mới
       if (!data.grade) {
         const extractedGrade = extractGradeFromClassName(trimmedName);
         if (extractedGrade) {
@@ -209,7 +202,6 @@ const importClasses = async (file) => {
         continue;
       }
 
-      // ✅ Tự động trích xuất khối nếu không có trong Excel
       if (!grade) {
         const extractedGrade = extractGradeFromClassName(trimmedName);
         if (extractedGrade) {

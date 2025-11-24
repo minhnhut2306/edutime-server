@@ -66,12 +66,10 @@ const createSchoolYear = asyncHandler(async (req, res) => {
 });
 
 const finishSchoolYear = asyncHandler(async (req, res) => {
-  // Kiểm tra quyền admin
   if (req.user?.role !== 'admin') {
     return res.status(403).json(forbiddenResponse('Chỉ Admin mới có quyền kết thúc năm học'));
   }
 
-  // Lấy năm học active hiện tại
   const activeYear = await schoolYearService.getActiveSchoolYear();
   
   if (!activeYear) {
@@ -91,8 +89,6 @@ const finishSchoolYear = asyncHandler(async (req, res) => {
 
 const deleteSchoolYear = asyncHandler(async (req, res) => {
   const { year } = req.params;
-
-  // Kiểm tra quyền admin
   if (req.user?.role !== 'admin') {
     return res.status(403).json(forbiddenResponse('Chỉ Admin mới có quyền xóa năm học'));
   }

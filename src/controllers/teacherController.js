@@ -34,7 +34,6 @@ const getTeacherById = asyncHandler(async (req, res) => {
 const createTeacher = asyncHandler(async (req, res) => {
   const { name, subjectIds, mainClassId } = req.body;
 
-  // Chỉ bắt buộc name, subjectIds và mainClassId
   if (!name || !subjectIds || !mainClassId) {
     return res
       .status(400)
@@ -61,7 +60,6 @@ const updateTeacher = asyncHandler(async (req, res) => {
   );
 });
 
-// Hàm mới: Cập nhật userId khi user chọn giáo viên
 const updateTeacherUserId = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
@@ -85,8 +83,8 @@ const deleteTeacher = asyncHandler(async (req, res) => {
 });
 
 const importTeachers = asyncHandler(async (req, res) => {
-  console.log("req.file:", req.file); // Thêm dòng này
-  console.log("req.body:", req.body); // Thêm dòng này
+  console.log("req.file:", req.file);
+  console.log("req.body:", req.body); 
 
   if (!req.file) {
     return res

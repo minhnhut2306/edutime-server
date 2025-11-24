@@ -2,7 +2,7 @@ const {
   badRequestResponse, 
   unauthorizedResponse,
   forbiddenResponse,
-  notFoundResponse,  // ✅ Thêm import này
+  notFoundResponse,  
   conflictResponse,
   serverErrorResponse,
   STATUS_CODES 
@@ -13,12 +13,11 @@ const asyncHandler = (fn) => {
     Promise.resolve(fn(req, res, next)).catch((error) => {
       console.error('AsyncHandler Error:', error);
       
-      // Nếu response đã được gửi rồi, chuyển error cho error handler tiếp theo
+
       if (res.headersSent) {
         return next(error);
       }
 
-      // Mongoose Validation Error
       if (error.name === 'ValidationError') {
         const errors = Object.values(error.errors).map(err => err.message);
         return res.status(STATUS_CODES.BAD_REQUEST).json(
@@ -26,14 +25,12 @@ const asyncHandler = (fn) => {
         );
       }
 
-      // Mongoose Cast Error (ID không hợp lệ)
       if (error.name === 'CastError') {
         return res.status(STATUS_CODES.BAD_REQUEST).json(
           badRequestResponse(`ID không hợp lệ: ${error.value}`)
         );
       }
 
-      // Mongoose Duplicate Key Error
       if (error.code === 11000) {
         const field = Object.keys(error.keyPattern || {})[0];
         const value = error.keyValue?.[field];
@@ -45,7 +42,6 @@ const asyncHandler = (fn) => {
         );
       }
 
-      // JWT Errors
       if (error.name === 'JsonWebTokenError') {
         return res.status(STATUS_CODES.UNAUTHORIZED).json(
           unauthorizedResponse('Token không hợp lệ')
@@ -58,7 +54,6 @@ const asyncHandler = (fn) => {
         );
       }
 
-      // Custom Application Errors
       if (error.message === "User not found") {
         return res.status(STATUS_CODES.NOT_FOUND).json(
           notFoundResponse("Người dùng không tồn tại")
@@ -107,7 +102,7 @@ const asyncHandler = (fn) => {
         );
       }
 
-      // Email/Password validation errors
+
       if (error.message.includes("Email") || error.message.includes("Password")) {
         return res.status(STATUS_CODES.BAD_REQUEST).json(
           badRequestResponse(error.message)
@@ -119,8 +114,6 @@ const asyncHandler = (fn) => {
           badRequestResponse(error.message === "Excel file is empty" ? "File Excel trống" : "Vui lòng tải lên file Excel")
         );
       }
-
-      // Default Server Error
       const statusCode = error.statusCode || STATUS_CODES.INTERNAL_SERVER_ERROR;
       const message = error.message || 'Có lỗi xảy ra trên server';
 

@@ -1,16 +1,15 @@
 const authenService = require("../services/authenService");
-const asyncHandler = require("../middleware/asyncHandler"); // ✅ Import asyncHandler
+const asyncHandler = require("../middleware/asyncHandler");
 const {
   successResponse,
   badRequestResponse,
   createdResponse,
   unauthorizedResponse,
   conflictResponse,
-  notFoundResponse, // ✅ Thêm import này
+  notFoundResponse,
   serverErrorResponse,
 } = require("../helper/createResponse.helper");
 
-// ✅ Wrap với asyncHandler - code gọn hơn nhiều
 const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
@@ -45,10 +44,7 @@ const register = asyncHandler(async (req, res) => {
 
 const logout = asyncHandler(async (req, res) => {
   const token = req.headers.authorization?.replace("Bearer ", "");
-  console.log(
-    "🔵 Logout request - Token:",
-    token ? token.substring(0, 20) + "..." : "NO TOKEN"
-  );
+  
   if (!token) {
     return res
       .status(400)
@@ -120,6 +116,7 @@ const getProfile = asyncHandler(async (req, res) => {
     })
   );
 });
+
 const getAllUsers = asyncHandler(async (req, res) => {
   const users = await authenService.getAllUsers();
 
@@ -132,7 +129,7 @@ const getAllUsers = asyncHandler(async (req, res) => {
 });
 
 const changePassword = asyncHandler(async (req, res) => {
-  const userId = req.userId; // Từ middleware authentication
+  const userId = req.userId;
   const { newPassword } = req.body;
 
   if (!newPassword) {
@@ -147,7 +144,6 @@ const changePassword = asyncHandler(async (req, res) => {
 });
 
 const deleteUser = asyncHandler(async (req, res) => {
-  // ✅ Thống nhất sử dụng req.userId thay vì req.user._id
   const userId = req.userId;
 
   const result = await authenService.deleteUser(userId);
