@@ -45,6 +45,8 @@ const groupRecordsByMonth = (records, weeks) => {
   return groups;
 };
 
+// Cập nhật hàm createBCSheet trong src/services/reportsService.js
+
 const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, records, weeksInMonth, bcNumber, schoolYear) => {
   const worksheet = workbook.addWorksheet(sheetName.substring(0, 31));
   
@@ -91,8 +93,11 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
   worksheet.getCell('A8').font = { size: 10 };
   worksheet.getCell('A8').fill = { type: 'pattern', pattern: 'none' };
   
+  // Tính toán thông tin phân công cho từng loại tiết dạy
   const classInfo = {};
-  records.forEach(r => {
+  const teachingRecords = records.filter(r => r.recordType === 'teaching' || !r.recordType);
+  
+  teachingRecords.forEach(r => {
     const className = r.classId?.name || '';
     if (className && !classInfo[className]) {
       classInfo[className] = 0;
@@ -111,9 +116,10 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
   worksheet.getCell('B8').font = { size: 10 };
   worksheet.getCell('B8').fill = { type: 'pattern', pattern: 'none' };
 
-  const totalPerWeek = Math.round(records.reduce((sum, r) => sum + (r.periods || 0), 0) / weeksCount);
+  // Tính tổng tiết giảng dạy (chỉ teaching)
+  const totalTeachingPerWeek = Math.round(teachingRecords.reduce((sum, r) => sum + (r.periods || 0), 0) / weeksCount);
   worksheet.mergeCells('H9:L9');
-  worksheet.getCell('H9').value = `Tổng cộng số tiết giảng dạy/tuần: ${String(totalPerWeek).padStart(2, '0')} Tiết`;
+  worksheet.getCell('H9').value = `Tổng cộng số tiết giảng dạy/tuần: ${String(totalTeachingPerWeek).padStart(2, '0')} Tiết`;
   worksheet.getCell('H9').font = { size: 10 };
   worksheet.getCell('H9').alignment = { horizontal: 'left' };
   worksheet.getCell('H9').fill = { type: 'pattern', pattern: 'none' };
@@ -126,16 +132,21 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
   worksheet.getCell('B10').font = { size: 10 };
   worksheet.getCell('B10').fill = { type: 'pattern', pattern: 'none' };
   
-  worksheet.getCell('B11').value = '-Kiêm nhiệm: ............. tiết/tuần';
+  // Tính tổng tiết kiêm nhiệm
+  const extraRecords = records.filter(r => r.recordType === 'extra');
+  const totalExtraPerWeek = Math.round(extraRecords.reduce((sum, r) => sum + (r.periods || 0), 0) / weeksCount);
+  
+  worksheet.getCell('B11').value = `-Kiêm nhiệm: ${totalExtraPerWeek > 0 ? totalExtraPerWeek : '.............'} tiết/tuần`;
   worksheet.getCell('B11').font = { size: 10 };
   worksheet.getCell('B11').fill = { type: 'pattern', pattern: 'none' };
   
   worksheet.mergeCells('H11:L11');
-  worksheet.getCell('H11').value = 'Tổng cộng số tiết kiêm nhiệm/tuần: ...... tiết.';
+  worksheet.getCell('H11').value = `Tổng cộng số tiết kiêm nhiệm/tuần: ${totalExtraPerWeek > 0 ? String(totalExtraPerWeek).padStart(2, '0') : '......'} tiết.`;
   worksheet.getCell('H11').font = { size: 10 };
   worksheet.getCell('H11').alignment = { horizontal: 'left' };
   worksheet.getCell('H11').fill = { type: 'pattern', pattern: 'none' };
 
+  // Tạo header bảng
   worksheet.mergeCells('A13:A14');
   worksheet.mergeCells('B13:B14');
   worksheet.mergeCells('C13:F13');
@@ -184,15 +195,17 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
   });
 
   let rowIndex = 15;
+  
+  // Định nghĩa các loại tiết dạy
   const categories = [
-    { label: 'Khối 12', grades: ['12'] },
-    { label: 'Khối 11', grades: ['11'] },
-    { label: 'Khối 10', grades: ['10'] },
-    { label: 'TN-HN 1', grades: [] },
-    { label: 'TN-HN 2', grades: [] },
-    { label: 'TN-HN 3', grades: [] },
-    { label: 'Kiêm nhiệm', grades: [] },
-    { label: 'Coi thi', grades: [] },
+    { label: 'Khối 12', grades: ['12'], recordTypes: ['teaching', null, undefined] },
+    { label: 'Khối 11', grades: ['11'], recordTypes: ['teaching', null, undefined] },
+    { label: 'Khối 10', grades: ['10'], recordTypes: ['teaching', null, undefined] },
+    { label: 'TN-HN 1', grades: [], recordTypes: ['tn-hn1'] },
+    { label: 'TN-HN 2', grades: [], recordTypes: ['tn-hn2'] },
+    { label: 'TN-HN 3', grades: [], recordTypes: ['tn-hn3'] },
+    { label: 'Kiêm nhiệm', grades: [], recordTypes: ['extra'] },
+    { label: 'Coi thi', grades: [], recordTypes: ['exam'] },
   ];
 
   let grandTotal = 0;
@@ -203,17 +216,35 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
     worksheet.getCell(`B${rowIndex}`).value = cat.label;
     
     let rowTotal = 0;
+    
     for (let i = 0; i < 4; i++) {
       const col = String.fromCharCode(67 + i);
       let weekPeriods = 0;
       
-      if (weeks[i] && cat.grades.length > 0) {
+      if (weeks[i]) {
         const weekId = weeks[i]._id?.toString();
+        
+        // Lọc bản ghi theo tuần và loại tiết dạy
         const weekRecs = records.filter(r => {
           const rWeekId = r.weekId?._id?.toString() || r.weekId?.toString();
+          const rType = r.recordType || 'teaching';
           const rGrade = r.classId?.grade;
-          return rWeekId === weekId && cat.grades.includes(rGrade);
+          
+          // Kiểm tra tuần
+          if (rWeekId !== weekId) return false;
+          
+          // Kiểm tra loại tiết dạy
+          if (!cat.recordTypes.includes(rType)) return false;
+          
+          // Nếu có grades (Khối 10, 11, 12), kiểm tra khối
+          if (cat.grades.length > 0) {
+            return cat.grades.includes(rGrade);
+          }
+          
+          // Nếu không có grades (TN-HN, Kiêm nhiệm, Coi thi), chỉ cần đúng recordType
+          return true;
         });
+        
         weekPeriods = weekRecs.reduce((sum, r) => sum + (r.periods || 0), 0);
       }
       
@@ -225,6 +256,7 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
     worksheet.getCell(`G${rowIndex}`).value = rowTotal;
     grandTotal += rowTotal;
 
+    // Format border cho từng cell trong dòng
     for (let c = 0; c < 12; c++) {
       const cell = worksheet.getCell(rowIndex, c + 1);
       cell.border = {
@@ -239,6 +271,7 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
     rowIndex++;
   });
 
+  // Dòng tổng cộng
   worksheet.getCell(`B${rowIndex}`).value = 'Tổng cộng';
   worksheet.getCell(`B${rowIndex}`).font = { bold: true, size: 10 };
   
@@ -266,6 +299,7 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
   
   rowIndex += 2;
 
+  // Footer
   worksheet.getCell(`A${rowIndex}`).value = 'Số tiền đề nghị thanh toán...............................đồng. (Ghi bằng chữ:.......................................................................)';
   worksheet.getCell(`A${rowIndex}`).font = { size: 10 };
   worksheet.getCell(`A${rowIndex}`).fill = { type: 'pattern', pattern: 'none' };

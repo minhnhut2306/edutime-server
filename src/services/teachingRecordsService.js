@@ -38,7 +38,7 @@ const getTeachingRecordsByTeacher = async (teacherId) => {
 
 const createTeachingRecord = async (data) => {
   try {
-    const { teacherId, weekId, subjectId, classId, periods, schoolYear, createdBy } = data;
+    const { teacherId, weekId, subjectId, classId, periods, schoolYear, createdBy, recordType, notes } = data;
 
     const [teacher, week, subject, classData, existingRecord] = await Promise.all([
       Teacher.findById(teacherId),
@@ -86,7 +86,9 @@ const createTeachingRecord = async (data) => {
       periods,
       schoolYear,
       createdBy,
-    });
+      recordType: recordType || 'teaching', 
+      notes: notes || '', 
+    })
 
     const populatedRecord = await TeachingRecords.findById(newRecord._id)
       .populate("weekId", "weekNumber startDate endDate schoolYear")
