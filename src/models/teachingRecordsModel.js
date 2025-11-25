@@ -29,20 +29,20 @@ const teachingRecordsSchema = new mongoose.Schema({
     min: 1,
     max: 20,
   },
-  schoolYear: {
-    type: String,
+  schoolYearId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "SchoolYear",
     required: true,
-    match: /^\d{4}-\d{4}$/,
-    index: true, // ✅ Đã có
+    index: true,
   },
   recordType: {
     type: String,
-    enum: ['teaching', 'tn-hn1', 'tn-hn2', 'tn-hn3', 'extra', 'exam'],
-    default: 'teaching',
+    enum: ["teaching", "tn-hn1", "tn-hn2", "tn-hn3", "extra", "exam"],
+    default: "teaching",
   },
   notes: {
     type: String,
-    default: '',
+    default: "",
   },
   createdBy: {
     type: String,
@@ -59,7 +59,7 @@ const teachingRecordsSchema = new mongoose.Schema({
 });
 
 teachingRecordsSchema.index({ teacherId: 1, weekId: 1 });
-teachingRecordsSchema.index({ schoolYear: 1, teacherId: 1 });
+teachingRecordsSchema.index({ schoolYearId: 1, teacherId: 1 });
 teachingRecordsSchema.index({ recordType: 1 });
 
 module.exports = mongoose.model("TeachingRecords", teachingRecordsSchema);

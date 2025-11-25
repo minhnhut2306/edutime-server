@@ -5,11 +5,11 @@ const subjectSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
-    schoolYear: {
-        type: String,
+    schoolYearId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'SchoolYear',
         required: true,
-        match: /^\d{4}-\d{4}$/,
-        index: true, // ✅ Thêm index
+        index: true,
     },
     status: {
         type: String,
@@ -27,8 +27,7 @@ const subjectSchema = new mongoose.Schema({
     },
 });
 
-// ✅ Môn học phải unique trong cùng 1 năm học
-subjectSchema.index({ name: 1, schoolYear: 1 }, { unique: true });
-subjectSchema.index({ schoolYear: 1, status: 1 }); // ✅ Quan trọng!
+classesSchema.index({ name: 1, schoolYearId: 1 }, { unique: true });
+classesSchema.index({ schoolYearId: 1, status: 1 });
 
 module.exports = mongoose.model("Subject", subjectSchema);

@@ -7,7 +7,7 @@ const Class = require("../models/classesModel");
 const getAllTeachingRecords = async () => {
   try {
     const records = await TeachingRecords.find({})
-      .populate("weekId", "weekNumber startDate endDate schoolYear")
+      .populate("weekId", "weekNumber startDate endDate schoolYearId")
       .populate("subjectId", "name code")
       .populate("classId", "name grade")
       .sort({ createdAt: -1 });
@@ -25,7 +25,7 @@ const getTeachingRecordsByTeacher = async (teacherId) => {
       return { success: false, statusCode: 404, message: "Không tìm thấy giáo viên" };
     }
     const records = await TeachingRecords.find({ teacherId })
-      .populate("weekId", "weekNumber startDate endDate schoolYear")
+      .populate("weekId", "weekNumber startDate endDate schoolYearId")
       .populate("subjectId", "name code")
       .populate("classId", "name grade")
       .sort({ createdAt: -1 });
@@ -38,7 +38,7 @@ const getTeachingRecordsByTeacher = async (teacherId) => {
 
 const createTeachingRecord = async (data) => {
   try {
-    const { teacherId, weekId, subjectId, classId, periods, schoolYear, createdBy, recordType, notes } = data;
+    const { teacherId, weekId, subjectId, classId, periods, schoolYearId, createdBy, recordType, notes } = data;
 
     console.log('📥 CREATE - Data nhận vào:', {
       teacherId,
@@ -46,7 +46,7 @@ const createTeachingRecord = async (data) => {
       subjectId,
       classId,
       periods,
-      schoolYear,
+      schoolYearId,
       recordType: recordType || 'teaching',
       notes: notes || '',
       createdBy
@@ -126,7 +126,7 @@ const createTeachingRecord = async (data) => {
       subjectId,
       classId,
       periods,
-      schoolYear,
+      schoolYearId,
       createdBy,
       recordType: recordType || 'teaching', 
       notes: notes || '', 
@@ -140,7 +140,7 @@ const createTeachingRecord = async (data) => {
     });
 
     const populatedRecord = await TeachingRecords.findById(newRecord._id)
-      .populate("weekId", "weekNumber startDate endDate schoolYear")
+      .populate("weekId", "weekNumber startDate endDate schoolYearId")
       .populate("subjectId", "name code")
       .populate("classId", "name grade");
 
@@ -158,7 +158,7 @@ const createTeachingRecord = async (data) => {
 
 const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
   try {
-    const { teacherId, weekId, subjectId, classId, periods, schoolYear, recordType, notes } = data;
+    const { teacherId, weekId, subjectId, classId, periods, schoolYearId, recordType, notes } = data;
 
     console.log('📥 UPDATE - Data nhận vào:', {
       recordId,
@@ -167,7 +167,7 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
       subjectId,
       classId,
       periods,
-      schoolYear,
+      schoolYearId,
       recordType,
       notes,
       currentTeacherId
@@ -194,9 +194,9 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
     if (periods !== undefined && (periods < 1 || periods > 20)) {
       return { success: false, statusCode: 400, message: "Số tiết phải từ 1 đến 20" };
     }
-    if (schoolYear !== undefined) {
-      const schoolYearRegex = /^\d{4}-\d{4}$/;
-      if (!schoolYearRegex.test(schoolYear)) {
+    if (schoolYearId !== undefined) {
+      const schoolYearIdRegex = /^\d{4}-\d{4}$/;
+      if (!schoolYearIdRegex.test(schoolYearId)) {
         return { success: false, statusCode: 400, message: "Năm học không đúng định dạng (VD: 2024-2025)" };
       }
     }
@@ -284,7 +284,7 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
     if (subjectId) record.subjectId = subjectId;
     if (classId) record.classId = classId;
     if (periods !== undefined) record.periods = periods;
-    if (schoolYear) record.schoolYear = schoolYear;
+    if (schoolYearId) record.schoolYearId = schoolYearId;
     if (recordType !== undefined) record.recordType = recordType; // ✅ FIX: Thêm dòng này
     if (notes !== undefined) record.notes = notes; // ✅ FIX: Thêm dòng này
 
@@ -306,7 +306,7 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
     });
 
     const populatedRecord = await TeachingRecords.findById(record._id)
-      .populate("weekId", "weekNumber startDate endDate schoolYear")
+      .populate("weekId", "weekNumber startDate endDate schoolYearId")
       .populate("subjectId", "name code")
       .populate("classId", "name grade");
 

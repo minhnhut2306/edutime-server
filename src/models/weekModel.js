@@ -13,11 +13,11 @@ const weekSchema = new mongoose.Schema({
         type: Date,
         required: true,
     },
-    schoolYear: {
-        type: String,
+    schoolYearId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'SchoolYear',
         required: true,
-        match: /^\d{4}-\d{4}$/,
-        index: true, // ✅ Thêm index
+        index: true,
     },
     status: {
         type: String,
@@ -31,8 +31,7 @@ const weekSchema = new mongoose.Schema({
     },
 });
 
-// ✅ Tuần phải unique trong cùng 1 năm học
-weekSchema.index({ weekNumber: 1, schoolYear: 1 }, { unique: true });
-weekSchema.index({ schoolYear: 1, status: 1 }); // ✅ Quan trọng!
+weekSchema.index({ weekNumber: 1, schoolYearId: 1 }, { unique: true });
+weekSchema.index({ schoolYearId: 1, status: 1 });
 
 module.exports = mongoose.model("Week", weekSchema);

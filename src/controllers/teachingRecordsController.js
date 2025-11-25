@@ -64,7 +64,7 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
 });
 
 const createTeachingRecord = asyncHandler(async (req, res) => {
-  const { teacherId, weekId, subjectId, classId, periods, schoolYear, recordType, notes } = req.body;
+  const { teacherId, weekId, subjectId, classId, periods, schoolYearId, recordType, notes } = req.body;
 
   console.log('🎯 CONTROLLER CREATE - req.body:', {
     teacherId,
@@ -72,12 +72,12 @@ const createTeachingRecord = asyncHandler(async (req, res) => {
     subjectId,
     classId,
     periods,
-    schoolYear,
+    schoolYearId,
     recordType,
     notes
   });
 
-  if (!teacherId || !weekId || !subjectId || !classId || !periods || !schoolYear) {
+  if (!teacherId || !weekId || !subjectId || !classId || !periods || !schoolYearId) {
     return res.status(400).json(badRequestResponse("Thiếu thông tin bắt buộc"));
   }
 
@@ -85,8 +85,8 @@ const createTeachingRecord = asyncHandler(async (req, res) => {
     return res.status(400).json(badRequestResponse("Số tiết phải từ 1 đến 20"));
   }
 
-  const schoolYearRegex = /^\d{4}-\d{4}$/;
-  if (!schoolYearRegex.test(schoolYear)) {
+  const schoolYearIdRegex = /^\d{4}-\d{4}$/;
+  if (!schoolYearIdRegex.test(schoolYearId)) {
     return res
       .status(400)
       .json(badRequestResponse("Năm học không đúng định dạng (VD: 2024-2025)"));
@@ -100,7 +100,7 @@ const createTeachingRecord = asyncHandler(async (req, res) => {
     subjectId,
     classId,
     periods,
-    schoolYear,
+    schoolYearId,
     createdBy,
     recordType: recordType || 'teaching',
     notes: notes || '',
@@ -181,7 +181,7 @@ const deleteTeachingRecord = asyncHandler(async (req, res) => {
 
 const updateTeachingRecord = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { teacherId, weekId, subjectId, classId, periods, schoolYear, recordType, notes } = req.body;
+  const { teacherId, weekId, subjectId, classId, periods, schoolYearId, recordType, notes } = req.body;
 
   console.log('🎯 CONTROLLER UPDATE - req.body:', {
     id,
@@ -190,7 +190,7 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
     subjectId,
     classId,
     periods,
-    schoolYear,
+    schoolYearId,
     recordType,
     notes
   });
@@ -209,7 +209,7 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
       subjectId,
       classId,
       periods,
-      schoolYear,
+      schoolYearId,
       recordType,
       notes,
     }, null);
@@ -251,7 +251,7 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
     subjectId,
     classId,
     periods,
-    schoolYear,
+    schoolYearId,
     recordType,
     notes,
   }, currentTeacherId);

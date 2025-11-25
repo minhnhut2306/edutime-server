@@ -24,16 +24,16 @@ const teacherSchema = new mongoose.Schema({
     ref: "Class",
     required: true,
   },
-  schoolYear: {
-    type: String,
+  schoolYearId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "SchoolYear",
     required: true,
-    match: /^\d{4}-\d{4}$/,
-    index: true, // ✅ Thêm index để query nhanh
+    index: true,
   },
   status: {
     type: String,
-    enum: ['active', 'archived'],
-    default: 'active',
+    enum: ["active", "archived"],
+    default: "active",
     index: true,
   },
   createdAt: {
@@ -48,7 +48,7 @@ const teacherSchema = new mongoose.Schema({
 
 // ✅ Index tổng hợp để query hiệu quả
 teacherSchema.index({ userId: 1 }, { unique: true, sparse: true });
-teacherSchema.index({ phone: 1, schoolYear: 1 }, { unique: true, sparse: true });
-teacherSchema.index({ schoolYear: 1, status: 1 }); // ✅ Quan trọng!
+teacherSchema.index({ phone: 1, schoolYearId: 1 }, { unique: true, sparse: true });
+teacherSchema.index({ schoolYearId: 1, status: 1 });
 
 module.exports = mongoose.model("Teacher", teacherSchema);

@@ -2,13 +2,14 @@ const Class = require("../models/classesModel");
 const SchoolYear = require("../models/schoolYearModel");
 const XLSX = require("xlsx");
 
-// ✅ Helper: Lấy năm học active
-const getActiveSchoolYear = async () => {
+// ✅ THAY ĐỔI 1: Helper function trả về ID thay vì string
+// ❌ CŨ: const getActiveSchoolYear = async () => { return activeYear.year; }
+const getActiveSchoolYearId = async () => {
   const activeYear = await SchoolYear.findOne({ status: 'active' });
   if (!activeYear) {
     throw new Error('Không có năm học đang hoạt động. Vui lòng tạo năm học mới!');
   }
-  return activeYear.year;
+  return activeYear._id;  // ✅ Trả về _id thay vì year
 };
 
 const extractGradeFromClassName = (className) => {
@@ -18,12 +19,13 @@ const extractGradeFromClassName = (className) => {
   return null;
 };
 
+// ✅ THAY ĐỔI 2: getClasses
 const getClasses = async (filters = {}) => {
-  const schoolYear = await getActiveSchoolYear(); // ✅ Tự động lấy năm active
+  const schoolYearId = await getActiveSchoolYearId();  // ✅ Đổi tên biến
   
   const query = {
-    schoolYear,      // ✅ Lọc theo năm học
-    status: 'active' // ✅ Chỉ lấy active
+    schoolYearId,      // ✅ Đổi tên field
+    status: 'active'
   };
 
   if (filters.name) {
@@ -52,9 +54,10 @@ const getClassById = async (id) => {
   return classInfo;
 };
 
+// ✅ THAY ĐỔI 3: createClass
 const createClass = async (data) => {
   const { name, grade, studentCount } = data;
-  const schoolYear = await getActiveSchoolYear(); // ✅ Tự động lấy năm học
+  const schoolYearId = await getActiveSchoolYearId();  // ✅ Đổi tên biến
 
   if (!name) {
     throw new Error("Class name is required");
@@ -76,10 +79,9 @@ const createClass = async (data) => {
     }
   }
 
-  // ✅ Check trùng trong cùng năm học
   const existingClass = await Class.findOne({ 
     name: trimmedName, 
-    schoolYear,
+    schoolYearId,  // ✅ Đổi tên field
     status: 'active' 
   });
   
@@ -91,13 +93,14 @@ const createClass = async (data) => {
     name: trimmedName,
     grade: finalGrade.toString().trim(),
     studentCount: studentCount ? parseInt(studentCount) : 0,
-    schoolYear,      // ✅ Tự động thêm năm học
+    schoolYearId,      // ✅ Đổi tên field
     status: 'active'
   });
 
   return classInfo;
 };
 
+// ✅ THAY ĐỔI 4: updateClass
 const updateClass = async (id, data) => {
   if (!id) {
     throw new Error("Class ID is required");
@@ -116,10 +119,9 @@ const updateClass = async (id, data) => {
     }
 
     if (trimmedName !== classInfo.name) {
-      // ✅ Check trùng trong cùng năm học
       const existingClass = await Class.findOne({ 
         name: trimmedName, 
-        schoolYear: classInfo.schoolYear,
+        schoolYearId: classInfo.schoolYearId,  // ✅ Đổi tên field
         status: 'active' 
       });
       
@@ -178,12 +180,13 @@ const getRowValue = (row, fieldName) => {
   return key ? row[key] : null;
 };
 
+// ✅ THAY ĐỔI 5: importClasses
 const importClasses = async (file) => {
   if (!file) {
     throw new Error("No file uploaded");
   }
 
-  const schoolYear = await getActiveSchoolYear(); // ✅ Tự động lấy năm học
+  const schoolYearId = await getActiveSchoolYearId();  // ✅ Đổi tên biến
 
   const workbook = XLSX.read(file.buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
@@ -242,18 +245,19 @@ const importClasses = async (file) => {
         }
       }
 
-      // ✅ Check trùng trong năm học
       const existingClass = await Class.findOne({ 
         name: trimmedName, 
-        schoolYear,
+        schoolYearId,  // ✅ Đổi tên field
         status: 'active' 
       });
       
       if (existingClass) {
+        // ✅ Lấy year để hiển thị message
+        const schoolYear = await SchoolYear.findById(schoolYearId);
         results.failed.push({
           row: rowNumber,
           data: row,
-          reason: `Tên lớp "${trimmedName}" đã tồn tại trong năm học ${schoolYear}`,
+          reason: `Tên lớp "${trimmedName}" đã tồn tại trong năm học ${schoolYear?.year || 'hiện tại'}`,
         });
         continue;
       }
@@ -262,7 +266,7 @@ const importClasses = async (file) => {
         name: trimmedName,
         grade: grade.toString().trim(),
         studentCount: studentCount ? parseInt(studentCount) : 0,
-        schoolYear,      // ✅ Tự động thêm năm học
+        schoolYearId,      // ✅ Đổi tên field
         status: 'active'
       });
 
@@ -285,7 +289,6 @@ const importClasses = async (file) => {
     failedCount: results.failed.length,
     success: results.success,
     failed: results.failed,
-    schoolYear // ✅ Trả về năm học đã import
   };
 };
 
