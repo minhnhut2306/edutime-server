@@ -22,7 +22,11 @@ const getTeachingRecordsByTeacher = async (teacherId) => {
   try {
     const teacher = await Teacher.findById(teacherId);
     if (!teacher) {
-      return { success: false, statusCode: 404, message: "Không tìm thấy giáo viên" };
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không tìm thấy giáo viên",
+      };
     }
     const records = await TeachingRecords.find({ teacherId })
       .populate("weekId", "weekNumber startDate endDate schoolYearId")
@@ -38,49 +42,78 @@ const getTeachingRecordsByTeacher = async (teacherId) => {
 
 const createTeachingRecord = async (data) => {
   try {
-    const { teacherId, weekId, subjectId, classId, periods, schoolYearId, createdBy, recordType, notes } = data;
-
-    console.log('📥 CREATE - Data nhận vào:', {
+    const {
       teacherId,
       weekId,
       subjectId,
       classId,
       periods,
       schoolYearId,
-      recordType: recordType || 'teaching',
-      notes: notes || '',
-      createdBy
+      createdBy,
+      recordType,
+      notes,
+    } = data;
+
+    console.log("📥 CREATE - Data nhận vào:", {
+      teacherId,
+      weekId,
+      subjectId,
+      classId,
+      periods,
+      schoolYearId,
+      recordType: recordType || "teaching",
+      notes: notes || "",
+      createdBy,
     });
 
-    const [teacher, week, subject, classData, existingRecord] = await Promise.all([
-      Teacher.findById(teacherId),
-      Week.findById(weekId),
-      Subject.findById(subjectId),
-      Class.findById(classId),
-      TeachingRecords.findOne({ teacherId, weekId, subjectId, classId }),
-    ]);
+    const [teacher, week, subject, classData, existingRecord] =
+      await Promise.all([
+        Teacher.findById(teacherId),
+        Week.findById(weekId),
+        Subject.findById(subjectId),
+        Class.findById(classId),
+        TeachingRecords.findOne({ teacherId, weekId, subjectId, classId }),
+      ]);
 
     if (!teacher) {
-      return { success: false, statusCode: 404, message: "Không tìm thấy giáo viên" };
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không tìm thấy giáo viên",
+      };
     }
     if (!week) {
-      return { success: false, statusCode: 404, message: "Không tìm thấy tuần học" };
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không tìm thấy tuần học",
+      };
     }
     if (!subject) {
-      return { success: false, statusCode: 404, message: "Không tìm thấy môn học" };
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không tìm thấy môn học",
+      };
     }
     if (!classData) {
-      return { success: false, statusCode: 404, message: "Không tìm thấy lớp học" };
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không tìm thấy lớp học",
+      };
     }
     if (
-      teacher.allowedGrades &&
+      Array.isArray(teacher.allowedGrades) &&
       teacher.allowedGrades.length > 0 &&
       !teacher.allowedGrades.includes(classData.grade)
     ) {
       return {
         success: false,
         statusCode: 403,
-        message: `Bạn không có quyền dạy khối ${classData.grade}. Chỉ được dạy khối: ${teacher.allowedGrades.join(", ")}`,
+        message: `Bạn không có quyền dạy khối ${
+          classData.grade
+        }. Chỉ được dạy khối: ${teacher.allowedGrades.join(", ")}`,
       };
     }
     if (existingRecord) {
@@ -96,30 +129,39 @@ const createTeachingRecord = async (data) => {
       {
         $match: {
           teacherId: teacher._id,
-          weekId: week._id
-        }
+          weekId: week._id,
+        },
       },
       {
         $group: {
           _id: null,
-          totalPeriods: { $sum: "$periods" }
-        }
-      }
+          totalPeriods: { $sum: "$periods" },
+        },
+      },
     ]);
 
-    const currentTotal = existingPeriodsInWeek.length > 0 ? existingPeriodsInWeek[0].totalPeriods : 0;
+    const currentTotal =
+      existingPeriodsInWeek.length > 0
+        ? existingPeriodsInWeek[0].totalPeriods
+        : 0;
     const newTotal = currentTotal + periods;
 
     if (newTotal > 17) {
       return {
         success: false,
         statusCode: 400,
-        message: `❌ Vượt quá giới hạn 17 tiết/tuần!\n\nTuần ${week.weekNumber}: Đã có ${currentTotal} tiết, thêm ${periods} tiết sẽ vượt quá giới hạn (tổng: ${newTotal} tiết).\n\nVui lòng nhập tối đa ${17 - currentTotal} tiết.`
+        message: `❌ Vượt quá giới hạn 17 tiết/tuần!\n\nTuần ${
+          week.weekNumber
+        }: Đã có ${currentTotal} tiết, thêm ${periods} tiết sẽ vượt quá giới hạn (tổng: ${newTotal} tiết).\n\nVui lòng nhập tối đa ${
+          17 - currentTotal
+        } tiết.`,
       };
     }
 
-    console.log(`✅ Kiểm tra tuần ${week.weekNumber}: ${currentTotal} + ${periods} = ${newTotal}/17 tiết`);
-    
+    console.log(
+      `✅ Kiểm tra tuần ${week.weekNumber}: ${currentTotal} + ${periods} = ${newTotal}/17 tiết`
+    );
+
     const newRecord = await TeachingRecords.create({
       teacherId,
       weekId,
@@ -128,15 +170,15 @@ const createTeachingRecord = async (data) => {
       periods,
       schoolYearId,
       createdBy,
-      recordType: recordType || 'teaching', 
-      notes: notes || '', 
+      recordType: recordType || "teaching",
+      notes: notes || "",
     });
 
-    console.log('✅ CREATE - Bản ghi đã tạo:', {
+    console.log("✅ CREATE - Bản ghi đã tạo:", {
       id: newRecord._id,
       recordType: newRecord.recordType,
       notes: newRecord.notes,
-      periods: newRecord.periods
+      periods: newRecord.periods,
     });
 
     const populatedRecord = await TeachingRecords.findById(newRecord._id)
@@ -144,10 +186,10 @@ const createTeachingRecord = async (data) => {
       .populate("subjectId", "name code")
       .populate("classId", "name grade");
 
-    console.log('✅ CREATE - Bản ghi sau populate:', {
+    console.log("✅ CREATE - Bản ghi sau populate:", {
       id: populatedRecord._id,
       recordType: populatedRecord.recordType,
-      notes: populatedRecord.notes
+      notes: populatedRecord.notes,
     });
 
     return { success: true, data: populatedRecord };
@@ -158,9 +200,18 @@ const createTeachingRecord = async (data) => {
 
 const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
   try {
-    const { teacherId, weekId, subjectId, classId, periods, schoolYearId, recordType, notes } = data;
+    const {
+      teacherId,
+      weekId,
+      subjectId,
+      classId,
+      periods,
+      schoolYearId,
+      recordType,
+      notes,
+    } = data;
 
-    console.log('📥 UPDATE - Data nhận vào:', {
+    console.log("📥 UPDATE - Data nhận vào:", {
       recordId,
       teacherId,
       weekId,
@@ -170,47 +221,71 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
       schoolYearId,
       recordType,
       notes,
-      currentTeacherId
+      currentTeacherId,
     });
 
     const record = await TeachingRecords.findById(recordId);
     if (!record) {
-      return { success: false, statusCode: 404, message: "Không tìm thấy bản ghi" };
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không tìm thấy bản ghi",
+      };
     }
 
-    console.log('📄 UPDATE - Bản ghi hiện tại:', {
+    console.log("📄 UPDATE - Bản ghi hiện tại:", {
       id: record._id,
       recordType: record.recordType,
       notes: record.notes,
-      periods: record.periods
+      periods: record.periods,
     });
 
     if (currentTeacherId) {
       if (record.teacherId.toString() !== currentTeacherId.toString()) {
-        return { success: false, statusCode: 403, message: "Bạn chỉ có quyền sửa bản ghi của chính mình" };
+        return {
+          success: false,
+          statusCode: 403,
+          message: "Bạn chỉ có quyền sửa bản ghi của chính mình",
+        };
       }
     }
 
     if (periods !== undefined && (periods < 1 || periods > 20)) {
-      return { success: false, statusCode: 400, message: "Số tiết phải từ 1 đến 20" };
+      return {
+        success: false,
+        statusCode: 400,
+        message: "Số tiết phải từ 1 đến 20",
+      };
     }
     if (schoolYearId !== undefined) {
       const schoolYearIdRegex = /^\d{4}-\d{4}$/;
       if (!schoolYearIdRegex.test(schoolYearId)) {
-        return { success: false, statusCode: 400, message: "Năm học không đúng định dạng (VD: 2024-2025)" };
+        return {
+          success: false,
+          statusCode: 400,
+          message: "Năm học không đúng định dạng (VD: 2024-2025)",
+        };
       }
     }
 
     const targetTeacherId = teacherId || record.teacherId;
     const teacher = await Teacher.findById(targetTeacherId);
     if (!teacher) {
-      return { success: false, statusCode: 404, message: "Không tìm thấy giáo viên" };
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không tìm thấy giáo viên",
+      };
     }
 
     const targetClassId = classId || record.classId;
     const classData = await Class.findById(targetClassId);
     if (!classData) {
-      return { success: false, statusCode: 404, message: "Không tìm thấy lớp học" };
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không tìm thấy lớp học",
+      };
     }
     if (
       teacher.allowedGrades &&
@@ -220,17 +295,29 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
       return {
         success: false,
         statusCode: 403,
-        message: `Bạn không có quyền dạy khối ${classData.grade}. Chỉ được dạy khối: ${teacher.allowedGrades.join(", ")}`,
+        message: `Bạn không có quyền dạy khối ${
+          classData.grade
+        }. Chỉ được dạy khối: ${teacher.allowedGrades.join(", ")}`,
       };
     }
 
     if (weekId) {
       const week = await Week.findById(weekId);
-      if (!week) return { success: false, statusCode: 404, message: "Không tìm thấy tuần học" };
+      if (!week)
+        return {
+          success: false,
+          statusCode: 404,
+          message: "Không tìm thấy tuần học",
+        };
     }
     if (subjectId) {
       const subject = await Subject.findById(subjectId);
-      if (!subject) return { success: false, statusCode: 404, message: "Không tìm thấy môn học" };
+      if (!subject)
+        return {
+          success: false,
+          statusCode: 404,
+          message: "Không tìm thấy môn học",
+        };
     }
 
     const existing = await TeachingRecords.findOne({
@@ -241,30 +328,37 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
       classId: classId || record.classId,
     });
     if (existing) {
-      return { success: false, statusCode: 409, message: "Đã tồn tại bản ghi với cùng tuần, môn và lớp" };
+      return {
+        success: false,
+        statusCode: 409,
+        message: "Đã tồn tại bản ghi với cùng tuần, môn và lớp",
+      };
     }
 
     // ✅ Kiểm tra tổng số tiết trong tuần không vượt quá 17 (khi UPDATE)
     const targetWeekId = weekId || record.weekId;
     const targetPeriods = periods !== undefined ? periods : record.periods;
-    
+
     const existingPeriodsInWeek = await TeachingRecords.aggregate([
       {
         $match: {
           _id: { $ne: record._id }, // Loại trừ bản ghi đang sửa
           teacherId: teacher._id,
-          weekId: targetWeekId
-        }
+          weekId: targetWeekId,
+        },
       },
       {
         $group: {
           _id: null,
-          totalPeriods: { $sum: "$periods" }
-        }
-      }
+          totalPeriods: { $sum: "$periods" },
+        },
+      },
     ]);
 
-    const currentTotal = existingPeriodsInWeek.length > 0 ? existingPeriodsInWeek[0].totalPeriods : 0;
+    const currentTotal =
+      existingPeriodsInWeek.length > 0
+        ? existingPeriodsInWeek[0].totalPeriods
+        : 0;
     const newTotal = currentTotal + targetPeriods;
 
     if (newTotal > 17) {
@@ -272,11 +366,17 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
       return {
         success: false,
         statusCode: 400,
-        message: `❌ Vượt quá giới hạn 17 tiết/tuần!\n\nTuần ${weekInfo?.weekNumber || '?'}: Đã có ${currentTotal} tiết (không tính bản ghi này), cập nhật thành ${targetPeriods} tiết sẽ vượt quá giới hạn (tổng: ${newTotal} tiết).\n\nVui lòng nhập tối đa ${17 - currentTotal} tiết.`
+        message: `❌ Vượt quá giới hạn 17 tiết/tuần!\n\nTuần ${
+          weekInfo?.weekNumber || "?"
+        }: Đã có ${currentTotal} tiết (không tính bản ghi này), cập nhật thành ${targetPeriods} tiết sẽ vượt quá giới hạn (tổng: ${newTotal} tiết).\n\nVui lòng nhập tối đa ${
+          17 - currentTotal
+        } tiết.`,
       };
     }
 
-    console.log(`✅ Kiểm tra update: ${currentTotal} + ${targetPeriods} = ${newTotal}/17 tiết`);
+    console.log(
+      `✅ Kiểm tra update: ${currentTotal} + ${targetPeriods} = ${newTotal}/17 tiết`
+    );
 
     // ✅ CẬP NHẬT ĐẦY ĐỦ recordType và notes
     if (teacherId) record.teacherId = teacherId;
@@ -288,21 +388,21 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
     if (recordType !== undefined) record.recordType = recordType; // ✅ FIX: Thêm dòng này
     if (notes !== undefined) record.notes = notes; // ✅ FIX: Thêm dòng này
 
-    console.log('🔄 UPDATE - Trước khi save:', {
+    console.log("🔄 UPDATE - Trước khi save:", {
       id: record._id,
       recordType: record.recordType,
       notes: record.notes,
-      periods: record.periods
+      periods: record.periods,
     });
 
     record.updatedAt = new Date();
     await record.save();
 
-    console.log('💾 UPDATE - Sau khi save:', {
+    console.log("💾 UPDATE - Sau khi save:", {
       id: record._id,
       recordType: record.recordType,
       notes: record.notes,
-      periods: record.periods
+      periods: record.periods,
     });
 
     const populatedRecord = await TeachingRecords.findById(record._id)
@@ -310,10 +410,10 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
       .populate("subjectId", "name code")
       .populate("classId", "name grade");
 
-    console.log('✅ UPDATE - Sau populate:', {
+    console.log("✅ UPDATE - Sau populate:", {
       id: populatedRecord._id,
       recordType: populatedRecord.recordType,
-      notes: populatedRecord.notes
+      notes: populatedRecord.notes,
     });
 
     return { success: true, data: populatedRecord };
@@ -326,11 +426,19 @@ const deleteTeachingRecord = async (recordId, currentTeacherId) => {
   try {
     const record = await TeachingRecords.findById(recordId);
     if (!record) {
-      return { success: false, statusCode: 404, message: "Không tìm thấy bản ghi" };
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Không tìm thấy bản ghi",
+      };
     }
     if (currentTeacherId) {
       if (record.teacherId.toString() !== currentTeacherId.toString()) {
-        return { success: false, statusCode: 403, message: "Bạn chỉ có thể xóa bản ghi của chính mình" };
+        return {
+          success: false,
+          statusCode: 403,
+          message: "Bạn chỉ có thể xóa bản ghi của chính mình",
+        };
       }
     }
     await TeachingRecords.findByIdAndDelete(recordId);

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "migrate:schoolyear": "node src/scripts/migrateSchoolYear.js"
+    "migrate:schoolyear": "node src/scripts/migrateSchoolYear.js",
+    "migrate:rebuildIndexes": "node src/scripts/rebuildIndexes.js"
   },
   "keywords": [],
   "author": "",

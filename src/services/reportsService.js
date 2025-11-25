@@ -13,8 +13,11 @@ const getMonthFromWeek = (week) => {
 
 const getWeeksInMonth = async (month, schoolYear) => {
   const allWeeks = await Week.find({}).sort({ weekNumber: 1 });
-  const [startYear, endYear] = schoolYear.split("-").map(Number);
-  const year = month >= 9 ? startYear : endYear;
+  const schoolYearDoc = await SchoolYear.findById(schoolYearId);
+  if (!schoolYearDoc) {
+    throw new Error("Năm học không tồn tại");
+  }
+  const [startYear, endYear] = schoolYearDoc.year.split("-").map(Number);
 
   return allWeeks.filter((week) => {
     const weekStart = new Date(week.startDate);
