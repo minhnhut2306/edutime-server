@@ -64,7 +64,18 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
 });
 
 const createTeachingRecord = asyncHandler(async (req, res) => {
-  const { teacherId, weekId, subjectId, classId, periods, schoolYear } = req.body;
+  const { teacherId, weekId, subjectId, classId, periods, schoolYear, recordType, notes } = req.body;
+
+  console.log('🎯 CONTROLLER CREATE - req.body:', {
+    teacherId,
+    weekId,
+    subjectId,
+    classId,
+    periods,
+    schoolYear,
+    recordType,
+    notes
+  });
 
   if (!teacherId || !weekId || !subjectId || !classId || !periods || !schoolYear) {
     return res.status(400).json(badRequestResponse("Thiếu thông tin bắt buộc"));
@@ -91,6 +102,8 @@ const createTeachingRecord = asyncHandler(async (req, res) => {
     periods,
     schoolYear,
     createdBy,
+    recordType: recordType || 'teaching',
+    notes: notes || '',
   });
 
   if (!result.success) {
@@ -106,6 +119,12 @@ const createTeachingRecord = asyncHandler(async (req, res) => {
     }
     return res.status(statusCode).json(badRequestResponse(result.message));
   }
+
+  console.log('✅ CONTROLLER CREATE - Response data:', {
+    id: result.data._id,
+    recordType: result.data.recordType,
+    notes: result.data.notes
+  });
 
   return res.status(201).json(createdResponse("Thêm bản ghi thành công", result.data));
 });
@@ -162,7 +181,19 @@ const deleteTeachingRecord = asyncHandler(async (req, res) => {
 
 const updateTeachingRecord = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { teacherId, weekId, subjectId, classId, periods, schoolYear } = req.body;
+  const { teacherId, weekId, subjectId, classId, periods, schoolYear, recordType, notes } = req.body;
+
+  console.log('🎯 CONTROLLER UPDATE - req.body:', {
+    id,
+    teacherId,
+    weekId,
+    subjectId,
+    classId,
+    periods,
+    schoolYear,
+    recordType,
+    notes
+  });
 
   if (!id) {
     return res.status(400).json(badRequestResponse("ID không hợp lệ"));
@@ -179,7 +210,10 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
       classId,
       periods,
       schoolYear,
+      recordType,
+      notes,
     }, null);
+    
     if (!result.success) {
       const statusCode = result.statusCode || 500;
       if (statusCode === 404) return res.status(404).json(notFoundResponse(result.message));
@@ -187,6 +221,13 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
       if (statusCode === 409) return res.status(409).json(badRequestResponse(result.message));
       return res.status(statusCode).json(serverErrorResponse(result.message));
     }
+    
+    console.log('✅ CONTROLLER UPDATE - Response data:', {
+      id: result.data._id,
+      recordType: result.data.recordType,
+      notes: result.data.notes
+    });
+    
     return res.json(successResponse("Cập nhật bản ghi thành công", result.data));
   }
 
@@ -211,6 +252,8 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
     classId,
     periods,
     schoolYear,
+    recordType,
+    notes,
   }, currentTeacherId);
 
   if (!result.success) {
@@ -220,6 +263,12 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
     if (statusCode === 409) return res.status(409).json(badRequestResponse(result.message));
     return res.status(statusCode).json(serverErrorResponse(result.message));
   }
+
+  console.log('✅ CONTROLLER UPDATE - Response data:', {
+    id: result.data._id,
+    recordType: result.data.recordType,
+    notes: result.data.notes
+  });
 
   return res.json(successResponse("Cập nhật bản ghi thành công", result.data));
 });
