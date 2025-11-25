@@ -17,11 +17,13 @@ const classesSchema = new mongoose.Schema({
         type: String,
         required: true,
         match: /^\d{4}-\d{4}$/,
+        index: true, // ✅ Thêm index
     },
     status: {
         type: String,
         enum: ['active', 'archived'],
         default: 'active',
+        index: true,
     },
     createdAt: {
         type: Date,
@@ -33,7 +35,8 @@ const classesSchema = new mongoose.Schema({
     },
 });
 
+// ✅ Lớp phải unique trong cùng 1 năm học
 classesSchema.index({ name: 1, schoolYear: 1 }, { unique: true });
-classesSchema.index({ schoolYear: 1, status: 1 });
+classesSchema.index({ schoolYear: 1, status: 1 }); // ✅ Quan trọng!
 
 module.exports = mongoose.model("Class", classesSchema);

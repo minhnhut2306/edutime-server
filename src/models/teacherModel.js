@@ -28,11 +28,13 @@ const teacherSchema = new mongoose.Schema({
     type: String,
     required: true,
     match: /^\d{4}-\d{4}$/,
+    index: true, // ✅ Thêm index để query nhanh
   },
   status: {
     type: String,
     enum: ['active', 'archived'],
     default: 'active',
+    index: true,
   },
   createdAt: {
     type: Date,
@@ -44,8 +46,9 @@ const teacherSchema = new mongoose.Schema({
   },
 });
 
+// ✅ Index tổng hợp để query hiệu quả
 teacherSchema.index({ userId: 1 }, { unique: true, sparse: true });
 teacherSchema.index({ phone: 1, schoolYear: 1 }, { unique: true, sparse: true });
-teacherSchema.index({ schoolYear: 1, status: 1 });
+teacherSchema.index({ schoolYear: 1, status: 1 }); // ✅ Quan trọng!
 
 module.exports = mongoose.model("Teacher", teacherSchema);

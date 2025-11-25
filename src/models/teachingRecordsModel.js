@@ -33,20 +33,13 @@ const teachingRecordsSchema = new mongoose.Schema({
     type: String,
     required: true,
     match: /^\d{4}-\d{4}$/,
+    index: true, // ✅ Đã có
   },
-  // Thêm các loại tiết dạy mới
   recordType: {
     type: String,
     enum: ['teaching', 'tn-hn1', 'tn-hn2', 'tn-hn3', 'extra', 'exam'],
     default: 'teaching',
-    // teaching: Giảng dạy thông thường (Khối 10, 11, 12)
-    // tn-hn1: Trung học - Hướng nghiệp 1
-    // tn-hn2: Trung học - Hướng nghiệp 2
-    // tn-hn3: Trung học - Hướng nghiệp 3
-    // extra: Kiêm nhiệm
-    // exam: Coi thi
   },
-  // Ghi chú cho từng loại
   notes: {
     type: String,
     default: '',
