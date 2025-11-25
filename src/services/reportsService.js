@@ -421,6 +421,47 @@ const createBCSheet = async (
   worksheet.getRow(13).height = 25;
   worksheet.getRow(14).height = 50;
 };
+const generateFileName = (teacher, schoolYear, options = {}) => {
+  const { type, bcNumber, weekId, weekIds, semester } = options;
+  const teacherShortName = teacher.name.split(" ").pop();
+
+  // Tạo timestamp chi tiết hơn để tránh trùng tên
+  const now = new Date();
+  const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(
+    2,
+    "0"
+  )}${String(now.getMinutes()).padStart(2, "0")}${String(
+    now.getSeconds()
+  ).padStart(2, "0")}`;
+
+  if (type === "bc" && bcNumber) {
+    return `BC_Thang${String(bcNumber).padStart(
+      2,
+      "0"
+    )}_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
+  }
+
+  if (type === "week" && weekId) {
+    return `BaoCao_Tuan_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
+  }
+
+  if (type === "week" && weekIds && weekIds.length > 0) {
+    return `BaoCao_NhieuTuan_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
+  }
+
+  if (type === "semester" && semester) {
+    return `BaoCao_HK${semester}_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
+  }
+
+  if (type === "year") {
+    return `BaoCao_NamHoc_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
+  }
+
+  return `BaoCao_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
+};
 
 const exportReport = async (teacherIds, schoolYear, options = {}) => {
   try {
@@ -713,48 +754,6 @@ const getTeacherReport = async (teacherId, type, filters = {}) => {
 };
 // Thêm hàm này vào trước module.exports
 // Tìm hàm generateFileName (gần cuối file) và thay thế bằng code này:
-
-const generateFileName = (teacher, schoolYear, options = {}) => {
-  const { type, bcNumber, weekId, weekIds, semester } = options;
-  const teacherShortName = teacher.name.split(" ").pop();
-
-  // Tạo timestamp chi tiết hơn để tránh trùng tên
-  const now = new Date();
-  const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(
-    2,
-    "0"
-  )}${String(now.getMinutes()).padStart(2, "0")}${String(
-    now.getSeconds()
-  ).padStart(2, "0")}`;
-
-  if (type === "bc" && bcNumber) {
-    return `BC_Thang${String(bcNumber).padStart(
-      2,
-      "0"
-    )}_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
-  }
-
-  if (type === "week" && weekId) {
-    return `BaoCao_Tuan_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
-  }
-
-  if (type === "week" && weekIds && weekIds.length > 0) {
-    return `BaoCao_NhieuTuan_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
-  }
-
-  if (type === "semester" && semester) {
-    return `BaoCao_HK${semester}_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
-  }
-
-  if (type === "year") {
-    return `BaoCao_NamHoc_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
-  }
-
-  return `BaoCao_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
-};
 
 module.exports = {
   exportReport,

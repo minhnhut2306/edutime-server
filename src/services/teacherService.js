@@ -2,24 +2,24 @@ const Teacher = require("../models/teacherModel");
 const User = require("../models/userModel");
 const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
-const schoolYearId = require("../models/schoolYearIdModel");
+const SchoolYear = require("../models/schoolYearModel"); // ✅ FIX: Đổi từ schoolYearIdModel
 const XLSX = require("xlsx");
 
-// ✅ THAY ĐỔI 1: Helper function
-const getActiveschoolYearId = async () => {
-  const activeYear = await schoolYearId.findOne({ status: 'active' });
+// ✅ FIX: Đổi tên hàm và model
+const getActiveSchoolYearId = async () => {
+  const activeYear = await SchoolYear.findOne({ status: 'active' });
   if (!activeYear) {
     throw new Error('Không có năm học đang hoạt động. Vui lòng tạo năm học mới!');
   }
   return activeYear._id;
 };
 
-// ✅ THAY ĐỔI 2: getTeachers
+// ✅ FIX: Đổi tất cả schoolYearIdId thành schoolYearId
 const getTeachers = async (filters = {}) => {
-  const schoolYearIdId = await getActiveschoolYearId();  // ✅ Đổi tên biến
+  const schoolYearId = await getActiveSchoolYearId();
   
   const query = {
-    schoolYearIdId,  // ✅ Đổi tên field
+    schoolYearId,
     status: 'active'
   };
 
@@ -61,10 +61,9 @@ const getTeacherById = async (id) => {
   return teacher;
 };
 
-// ✅ THAY ĐỔI 3: createTeacher
 const createTeacher = async (data) => {
   const { name, phone, userId, subjectIds, mainClassId } = data;
-  const schoolYearIdId = await getActiveschoolYearId();  // ✅ Đổi tên biến
+  const schoolYearId = await getActiveSchoolYearId();
 
   if (!name || !subjectIds || !mainClassId) {
     throw new Error("Name, subjectIds và mainClassId là bắt buộc");
@@ -74,7 +73,7 @@ const createTeacher = async (data) => {
 
   if (phone) {
     checks.push(
-      Teacher.findOne({ phone, schoolYearIdId }).then((existing) => {  // ✅ Đổi tên field
+      Teacher.findOne({ phone, schoolYearId }).then((existing) => {
         if (existing) throw new Error("Phone number already exists in this school year");
       })
     );
@@ -102,7 +101,7 @@ const createTeacher = async (data) => {
     userId: userId || null,
     subjectIds,
     mainClassId,
-    schoolYearIdId,  // ✅ Đổi tên field
+    schoolYearId,
     status: 'active'
   });
 
@@ -113,7 +112,6 @@ const createTeacher = async (data) => {
   ]);
 };
 
-// ✅ THAY ĐỔI 4: updateTeacher
 const updateTeacher = async (id, data) => {
   const teacher = await Teacher.findById(id);
   if (!teacher) {
@@ -126,7 +124,7 @@ const updateTeacher = async (id, data) => {
     checks.push(
       Teacher.findOne({ 
         phone: data.phone, 
-        schoolYearIdId: teacher.schoolYearIdId  // ✅ Đổi tên field
+        schoolYearId: teacher.schoolYearId
       }).then((existing) => {
         if (existing && existing._id.toString() !== id) {
           throw new Error("Phone number already exists");
@@ -230,13 +228,11 @@ const removeVietnameseTones = (str) => {
 };
 
 const findSubjectFlexible = async (subjectName, schoolYearId) => {
-
-  
   if (!subjectName) return null;
 
   const normalizedName = removeVietnameseTones(subjectName);
 
-  const allSubjects = await Subject.find({ schoolYearId, status: 'active' });  // ✅ Đổi field
+  const allSubjects = await Subject.find({ schoolYearId, status: 'active' });
 
   const subject = allSubjects.find((s) => {
     const dbName = removeVietnameseTones(s.name);
@@ -266,7 +262,7 @@ const importTeachers = async (file) => {
     throw new Error("No file uploaded");
   }
 
-  const schoolYearId = await getActiveschoolYearId();
+  const schoolYearId = await getActiveSchoolYearId();
 
   const workbook = XLSX.read(file.buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
@@ -335,10 +331,12 @@ const importTeachers = async (file) => {
       }
 
       if (missingSubject) {
+        // ✅ FIX: Lấy year để hiển thị message
+        const schoolYear = await SchoolYear.findById(schoolYearId);
         results.failed.push({
           row: rowNumber,
           data: row,
-          reason: `Môn học "${missingSubject}" không tồn tại trong năm học ${schoolYearId}`,
+          reason: `Môn học "${missingSubject}" không tồn tại trong năm học ${schoolYear?.year || 'hiện tại'}`,
         });
         continue;
       }
@@ -354,10 +352,12 @@ const importTeachers = async (file) => {
 
       const classInfo = await findClassFlexible(className, schoolYearId);
       if (!classInfo) {
+        // ✅ FIX: Lấy year để hiển thị message
+        const schoolYear = await SchoolYear.findById(schoolYearId);
         results.failed.push({
           row: rowNumber,
           data: row,
-          reason: `Lớp "${className}" không tồn tại trong năm học ${schoolYearId}`,
+          reason: `Lớp "${className}" không tồn tại trong năm học ${schoolYear?.year || 'hiện tại'}`,
         });
         continue;
       }
@@ -399,7 +399,7 @@ const importTeachers = async (file) => {
 };
 
 const exportTeachers = async () => {
-  const schoolYearId = await getActiveschoolYearId();
+  const schoolYearId = await getActiveSchoolYearId();
   
   const teachers = await Teacher.find({ schoolYearId, status: 'active' })
     .populate('subjectIds', 'name')

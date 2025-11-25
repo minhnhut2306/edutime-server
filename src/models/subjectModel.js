@@ -27,7 +27,7 @@ const subjectSchema = new mongoose.Schema({
     },
 });
 
-classesSchema.index({ name: 1, schoolYearId: 1 }, { unique: true });
-classesSchema.index({ schoolYearId: 1, status: 1 });
+subjectSchema.index({ name: 1, schoolYearId: 1 }, { unique: true });
+subjectSchema.index({ schoolYearId: 1, status: 1 });
 
 module.exports = mongoose.model("Subject", subjectSchema);
