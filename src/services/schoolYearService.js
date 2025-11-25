@@ -63,47 +63,40 @@ class SchoolYearService {
       throw new Error(`Năm học ${newYear} đã tồn tại!`);
     }
 
-    const [teachers, classes, subjects] = await Promise.all([
-      Teacher.find({ schoolYear: currentYear }).lean(),
-      Class.find({ schoolYear: currentYear }).lean(),
-      Subject.find({ schoolYear: currentYear }).lean()
-    ]);
-
-    const newSchoolYear = await this.createSchoolYear(newYear);
-
-    const copyWithNewYear = (items) => {
-      return items.map(item => {
-        const { _id, __v, ...rest } = item;
-        return {
-          ...rest,
-          schoolYear: newYear,
-          createdAt: new Date()
-        };
-      });
-    };
-
-    const [newTeachers, newClasses, newSubjects] = await Promise.all([
-      Teacher.insertMany(copyWithNewYear(teachers)),
-      Class.insertMany(copyWithNewYear(classes)),
-      Subject.insertMany(copyWithNewYear(subjects))
-    ]);
-
-    newSchoolYear.teachers = newTeachers.map(t => t._id);
-    newSchoolYear.classes = newClasses.map(c => c._id);
-    newSchoolYear.subjects = newSubjects.map(s => s._id);
-
-    const [updatedNewYear] = await Promise.all([
-      newSchoolYear.save(),
-      SchoolYear.updateOne(
-        { year: currentYear },
-        { status: 'archived', endedAt: new Date() }
+    // Archive tất cả dữ liệu của năm học cũ
+    await Promise.all([
+      Teacher.updateMany(
+        { schoolYear: currentYear },
+        { status: 'archived' }
+      ),
+      Class.updateMany(
+        { schoolYear: currentYear },
+        { status: 'archived' }
+      ),
+      Subject.updateMany(
+        { schoolYear: currentYear },
+        { status: 'archived' }
+      ),
+      Week.updateMany(
+        { schoolYear: currentYear },
+        { status: 'archived' }
       )
     ]);
+
+    // Tạo năm học mới
+    const newSchoolYear = await this.createSchoolYear(newYear);
+
+    // Archive năm học cũ
+    await SchoolYear.updateOne(
+      { year: currentYear },
+      { status: 'archived', endedAt: new Date() }
+    );
 
     return {
       archivedYear: currentYear,
       newYear,
-      newSchoolYearId: updatedNewYear._id.toString()
+      newSchoolYearId: newSchoolYear._id.toString(),
+      message: 'Đã kết thúc năm học. Vui lòng import dữ liệu cho năm học mới!'
     };
   }
 
@@ -135,6 +128,35 @@ class SchoolYearService {
     ]);
     
     return true;
+  }
+
+  // Export dữ liệu năm học cũ để import cho năm mới
+  async exportYearData(year) {
+    const [teachers, classes, subjects] = await Promise.all([
+      Teacher.find({ schoolYear: year, status: 'active' })
+        .populate('subjectIds', 'name')
+        .populate('mainClassId', 'name grade')
+        .lean(),
+      Class.find({ schoolYear: year, status: 'active' }).lean(),
+      Subject.find({ schoolYear: year, status: 'active' }).lean()
+    ]);
+
+    return {
+      teachers: teachers.map(t => ({
+        name: t.name,
+        phone: t.phone || '',
+        subjects: t.subjectIds.map(s => s.name).join(', '),
+        mainClass: t.mainClassId?.name || ''
+      })),
+      classes: classes.map(c => ({
+        name: c.name,
+        grade: c.grade,
+        studentCount: c.studentCount
+      })),
+      subjects: subjects.map(s => ({
+        name: s.name
+      }))
+    };
   }
 }
 

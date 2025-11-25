@@ -7,12 +7,12 @@ const teacherSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
-    sparse: true,  // Cho phép nhiều null
+    sparse: true,
   },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    sparse: true,  // Cho phép nhiều null, bỏ unique: true
+    sparse: true,
   },
   subjectIds: {
     type: [mongoose.Schema.Types.ObjectId],
@@ -24,6 +24,16 @@ const teacherSchema = new mongoose.Schema({
     ref: "Class",
     required: true,
   },
+  schoolYear: {
+    type: String,
+    required: true,
+    match: /^\d{4}-\d{4}$/,
+  },
+  status: {
+    type: String,
+    enum: ['active', 'archived'],
+    default: 'active',
+  },
   createdAt: {
     type: Date,
     default: Date.now,
@@ -34,8 +44,8 @@ const teacherSchema = new mongoose.Schema({
   },
 });
 
-// Tạo sparse unique index - cho phép nhiều null nhưng không trùng khi có giá trị
 teacherSchema.index({ userId: 1 }, { unique: true, sparse: true });
-teacherSchema.index({ phone: 1 }, { unique: true, sparse: true });
+teacherSchema.index({ phone: 1, schoolYear: 1 }, { unique: true, sparse: true });
+teacherSchema.index({ schoolYear: 1, status: 1 });
 
 module.exports = mongoose.model("Teacher", teacherSchema);

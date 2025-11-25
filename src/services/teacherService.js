@@ -2,10 +2,24 @@ const Teacher = require("../models/teacherModel");
 const User = require("../models/userModel");
 const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
+const SchoolYear = require("../models/schoolYearModel");
 const XLSX = require("xlsx");
 
+const getActiveSchoolYear = async () => {
+  const activeYear = await SchoolYear.findOne({ status: 'active' });
+  if (!activeYear) {
+    throw new Error('Không có năm học đang hoạt động. Vui lòng tạo năm học mới!');
+  }
+  return activeYear.year;
+};
+
 const getTeachers = async (filters = {}) => {
-  const query = {};
+  const schoolYear = await getActiveSchoolYear();
+  
+  const query = {
+    schoolYear,
+    status: 'active'
+  };
 
   if (filters.name) {
     query.name = { $regex: filters.name, $options: "i" };
@@ -47,6 +61,7 @@ const getTeacherById = async (id) => {
 
 const createTeacher = async (data) => {
   const { name, phone, userId, subjectIds, mainClassId } = data;
+  const schoolYear = await getActiveSchoolYear();
 
   if (!name || !subjectIds || !mainClassId) {
     throw new Error("Name, subjectIds và mainClassId là bắt buộc");
@@ -56,8 +71,8 @@ const createTeacher = async (data) => {
 
   if (phone) {
     checks.push(
-      Teacher.findOne({ phone }).then((existing) => {
-        if (existing) throw new Error("Phone number already exists");
+      Teacher.findOne({ phone, schoolYear }).then((existing) => {
+        if (existing) throw new Error("Phone number already exists in this school year");
       })
     );
   }
@@ -84,6 +99,8 @@ const createTeacher = async (data) => {
     userId: userId || null,
     subjectIds,
     mainClassId,
+    schoolYear,
+    status: 'active'
   });
 
   return teacher.populate([
@@ -103,7 +120,7 @@ const updateTeacher = async (id, data) => {
 
   if (data.phone && (!teacher.phone || data.phone !== teacher.phone)) {
     checks.push(
-      Teacher.findOne({ phone: data.phone }).then((existing) => {
+      Teacher.findOne({ phone: data.phone, schoolYear: teacher.schoolYear }).then((existing) => {
         if (existing && existing._id.toString() !== id) {
           throw new Error("Phone number already exists");
         }
@@ -184,21 +201,6 @@ const deleteTeacher = async (id) => {
   };
 };
 
-const generateTeacherCode = async () => {
-  const lastTeacher = await Teacher.findOne()
-    .sort({ teacherCode: -1 })
-    .select("teacherCode");
-
-  if (!lastTeacher || !lastTeacher.teacherCode) {
-    return "GV001";
-  }
-
-  const lastNumber = parseInt(lastTeacher.teacherCode.substring(2));
-  const nextNumber = lastNumber + 1;
-
-  return `GV${nextNumber.toString().padStart(3, "0")}`;
-};
-
 const getRowValue = (row, fieldName) => {
   const key = Object.keys(row).find(
     (k) => k.toLowerCase() === fieldName.toLowerCase()
@@ -219,12 +221,12 @@ const removeVietnameseTones = (str) => {
   return str;
 };
 
-const findSubjectFlexible = async (subjectName) => {
+const findSubjectFlexible = async (subjectName, schoolYear) => {
   if (!subjectName) return null;
 
   const normalizedName = removeVietnameseTones(subjectName);
 
-  const allSubjects = await Subject.find({});
+  const allSubjects = await Subject.find({ schoolYear, status: 'active' });
 
   const subject = allSubjects.find((s) => {
     const dbName = removeVietnameseTones(s.name);
@@ -234,12 +236,12 @@ const findSubjectFlexible = async (subjectName) => {
   return subject;
 };
 
-const findClassFlexible = async (className) => {
+const findClassFlexible = async (className, schoolYear) => {
   if (!className) return null;
 
   const normalizedName = removeVietnameseTones(className);
 
-  const allClasses = await Class.find({});
+  const allClasses = await Class.find({ schoolYear, status: 'active' });
 
   const classInfo = allClasses.find((c) => {
     const dbName = removeVietnameseTones(c.name);
@@ -253,6 +255,8 @@ const importTeachers = async (file) => {
   if (!file) {
     throw new Error("No file uploaded");
   }
+
+  const schoolYear = await getActiveSchoolYear();
 
   const workbook = XLSX.read(file.buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
@@ -273,8 +277,6 @@ const importTeachers = async (file) => {
     const rowNumber = i + 2;
 
     try {
-      const teacherCode = await generateTeacherCode();
-
       const name = getRowValue(row, "Họ và tên");
       let phone = getRowValue(row, "Số điện thoại");
       const subjectNames = getRowValue(row, "Môn dạy");
@@ -298,12 +300,12 @@ const importTeachers = async (file) => {
       }
 
       if (phone && phone !== "") {
-        const existingTeacher = await Teacher.findOne({ phone: phone });
+        const existingTeacher = await Teacher.findOne({ phone: phone, schoolYear });
         if (existingTeacher) {
           results.failed.push({
             row: rowNumber,
             data: row,
-            reason: `Số điện thoại ${phone} đã tồn tại`,
+            reason: `Số điện thoại ${phone} đã tồn tại trong năm học này`,
           });
           continue;
         }
@@ -314,7 +316,7 @@ const importTeachers = async (file) => {
       let missingSubject = null;
 
       for (const subjectName of subjectNameList) {
-        const subject = await findSubjectFlexible(subjectName);
+        const subject = await findSubjectFlexible(subjectName, schoolYear);
         if (!subject) {
           missingSubject = subjectName;
           break;
@@ -326,7 +328,7 @@ const importTeachers = async (file) => {
         results.failed.push({
           row: rowNumber,
           data: row,
-          reason: `Môn học "${missingSubject}" không tồn tại`,
+          reason: `Môn học "${missingSubject}" không tồn tại trong năm học ${schoolYear}`,
         });
         continue;
       }
@@ -340,22 +342,23 @@ const importTeachers = async (file) => {
         continue;
       }
 
-      const classInfo = await findClassFlexible(className);
+      const classInfo = await findClassFlexible(className, schoolYear);
       if (!classInfo) {
         results.failed.push({
           row: rowNumber,
           data: row,
-          reason: `Lớp "${className}" không tồn tại`,
+          reason: `Lớp "${className}" không tồn tại trong năm học ${schoolYear}`,
         });
         continue;
       }
 
       const teacher = await Teacher.create({
-        teacherCode,
         name: name.trim(),
         phone: phone || null,
         subjectIds: subjectIds,
         mainClassId: classInfo._id,
+        schoolYear,
+        status: 'active'
       });
 
       const populatedTeacher = await Teacher.findById(teacher._id)
@@ -364,7 +367,6 @@ const importTeachers = async (file) => {
 
       results.success.push({
         row: rowNumber,
-        teacherCode,
         teacher: populatedTeacher,
       });
     } catch (error) {
@@ -382,6 +384,26 @@ const importTeachers = async (file) => {
     failedCount: results.failed.length,
     success: results.success,
     failed: results.failed,
+    schoolYear
+  };
+};
+
+const exportTeachers = async () => {
+  const schoolYear = await getActiveSchoolYear();
+  
+  const teachers = await Teacher.find({ schoolYear, status: 'active' })
+    .populate('subjectIds', 'name')
+    .populate('mainClassId', 'name grade')
+    .sort({ name: 1 });
+
+  return {
+    teachers: teachers.map(t => ({
+      'Họ và tên': t.name,
+      'Số điện thoại': t.phone || '',
+      'Môn dạy': t.subjectIds.map(s => s.name).join(', '),
+      'Lớp chủ nhiệm': t.mainClassId?.name || ''
+    })),
+    schoolYear
   };
 };
 
@@ -393,4 +415,5 @@ module.exports = {
   updateTeacherUserId,
   deleteTeacher,
   importTeachers,
+  exportTeachers,
 };
