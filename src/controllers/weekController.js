@@ -9,9 +9,13 @@ const {
 } = require("../helper/createResponse.helper");
 
 const getWeeks = asyncHandler(async (req, res) => {
-    const weeks = await weekService.getWeeks();
+    const filters = {
+      schoolYear: req.query.schoolYear, 
+    };
+    
+    const weeks = await weekService.getWeeks(filters);
     return res.json(successResponse("Lấy danh sách tuần học thành công", { weeks }));
-});
+  });
 
 const createWeek = asyncHandler(async (req, res) => {
     const { startDate, endDate } = req.body;

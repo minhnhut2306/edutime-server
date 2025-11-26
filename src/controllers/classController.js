@@ -10,6 +10,7 @@ const getClasses = asyncHandler(async (req, res) => {
   const filters = {
     name: req.query.name,
     grade: req.query.grade,
+    schoolYear: req.query.schoolYear,
   };
 
   const classes = await classService.getClasses(filters);

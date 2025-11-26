@@ -11,6 +11,7 @@ const {
 const getSubjects = asyncHandler(async (req, res) => {
     const filters = {
         name: req.query.name,
+        schoolYear: req.query.schoolYear,
     };
 
     const subjects = await subjectService.getSubjects(filters);
