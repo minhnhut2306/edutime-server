@@ -1,5 +1,6 @@
 const weekService = require("../services/weekService");
 const asyncHandler = require("../middleware/asyncHandler");
+const SchoolYear = require("../models/schoolYearModel"); // ✅ THÊM
 const {
     successResponse,
     createdResponse,
@@ -9,13 +10,26 @@ const {
 } = require("../helper/createResponse.helper");
 
 const getWeeks = asyncHandler(async (req, res) => {
+    // ✅ FIX: Convert schoolYear string sang schoolYearId
+    let schoolYearId = null;
+    if (req.query.schoolYear) {
+        const schoolYear = await SchoolYear.findOne({ year: req.query.schoolYear });
+        if (!schoolYear) {
+            return res.status(404).json({
+                code: 404,
+                msg: `Không tìm thấy năm học ${req.query.schoolYear}`
+            });
+        }
+        schoolYearId = schoolYear._id;
+    }
+
     const filters = {
-      schoolYear: req.query.schoolYear, 
+        schoolYearId, // ✅ Truyền ObjectId
     };
     
     const weeks = await weekService.getWeeks(filters);
     return res.json(successResponse("Lấy danh sách tuần học thành công", { weeks }));
-  });
+});
 
 const createWeek = asyncHandler(async (req, res) => {
     const { startDate, endDate } = req.body;

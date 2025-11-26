@@ -1,5 +1,6 @@
 const classService = require("../services/classService");
 const asyncHandler = require("../middleware/asyncHandler");
+const SchoolYear = require("../models/schoolYearModel"); // ✅ THÊM
 const {
   successResponse,
   createdResponse,
@@ -7,10 +8,23 @@ const {
 } = require("../helper/createResponse.helper");
 
 const getClasses = asyncHandler(async (req, res) => {
+  // ✅ FIX: Convert schoolYear string sang schoolYearId
+  let schoolYearId = null;
+  if (req.query.schoolYear) {
+    const schoolYear = await SchoolYear.findOne({ year: req.query.schoolYear });
+    if (!schoolYear) {
+      return res.status(404).json({
+        code: 404,
+        msg: `Không tìm thấy năm học ${req.query.schoolYear}`
+      });
+    }
+    schoolYearId = schoolYear._id;
+  }
+
   const filters = {
     name: req.query.name,
     grade: req.query.grade,
-    schoolYear: req.query.schoolYear,
+    schoolYearId, // ✅ Truyền ObjectId thay vì string
   };
 
   const classes = await classService.getClasses(filters);
@@ -25,25 +39,21 @@ const getClasses = asyncHandler(async (req, res) => {
 
 const getClassById = asyncHandler(async (req, res) => {
   const classInfo = await classService.getClassById(req.params.id);
-
   res.json(successResponse("Lấy thông tin lớp học thành công", classInfo));
 });
 
 const createClass = asyncHandler(async (req, res) => {
   const classInfo = await classService.createClass(req.body);
-
   res.status(201).json(createdResponse("Tạo lớp học thành công", classInfo));
 });
 
 const updateClass = asyncHandler(async (req, res) => {
   const classInfo = await classService.updateClass(req.params.id, req.body);
-
   res.json(successResponse("Cập nhật lớp học thành công", classInfo));
 });
 
 const deleteClass = asyncHandler(async (req, res) => {
   const result = await classService.deleteClass(req.params.id);
-
   res.json(successResponse(result.message, result.deletedClass));
 });
 

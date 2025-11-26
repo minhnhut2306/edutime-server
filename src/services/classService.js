@@ -1,15 +1,13 @@
 const Class = require("../models/classesModel");
 const SchoolYear = require("../models/schoolYearModel");
-const XLSX = require("xlsx");
 
-// ✅ THAY ĐỔI 1: Helper function trả về ID thay vì string
-// ❌ CŨ: const getActiveSchoolYear = async () => { return activeYear.year; }
+// ✅ FIX: Hàm này chỉ dùng cho CREATE, không dùng cho GET
 const getActiveSchoolYearId = async () => {
   const activeYear = await SchoolYear.findOne({ status: 'active' });
   if (!activeYear) {
     throw new Error('Không có năm học đang hoạt động. Vui lòng tạo năm học mới!');
   }
-  return activeYear._id;  // ✅ Trả về _id thay vì year
+  return activeYear._id;
 };
 
 const extractGradeFromClassName = (className) => {
@@ -19,9 +17,10 @@ const extractGradeFromClassName = (className) => {
   return null;
 };
 
-// ✅ THAY ĐỔI 2: getClasses
+// ✅ FIX: getClasses - nhận schoolYearId từ controller
 const getClasses = async (filters = {}) => {
-  const schoolYearId = await getActiveSchoolYearId();  // ✅ Đổi tên biến
+  // ✅ Nếu không có schoolYearId từ query, mới lấy active
+  const schoolYearId = filters.schoolYearId || await getActiveSchoolYearId();
   
   const query = {
     schoolYearId
@@ -53,10 +52,9 @@ const getClassById = async (id) => {
   return classInfo;
 };
 
-// ✅ THAY ĐỔI 3: createClass
 const createClass = async (data) => {
   const { name, grade, studentCount } = data;
-  const schoolYearId = await getActiveSchoolYearId();  // ✅ Đổi tên biến
+  const schoolYearId = await getActiveSchoolYearId();
 
   if (!name) {
     throw new Error("Class name is required");
@@ -80,7 +78,7 @@ const createClass = async (data) => {
 
   const existingClass = await Class.findOne({ 
     name: trimmedName, 
-    schoolYearId,  // ✅ Đổi tên field
+    schoolYearId,
     status: 'active' 
   });
   
@@ -92,14 +90,13 @@ const createClass = async (data) => {
     name: trimmedName,
     grade: finalGrade.toString().trim(),
     studentCount: studentCount ? parseInt(studentCount) : 0,
-    schoolYearId,      // ✅ Đổi tên field
+    schoolYearId,
     status: 'active'
   });
 
   return classInfo;
 };
 
-// ✅ THAY ĐỔI 4: updateClass
 const updateClass = async (id, data) => {
   if (!id) {
     throw new Error("Class ID is required");
@@ -120,7 +117,7 @@ const updateClass = async (id, data) => {
     if (trimmedName !== classInfo.name) {
       const existingClass = await Class.findOne({ 
         name: trimmedName, 
-        schoolYearId: classInfo.schoolYearId,  // ✅ Đổi tên field
+        schoolYearId: classInfo.schoolYearId,
         status: 'active' 
       });
       
@@ -179,13 +176,12 @@ const getRowValue = (row, fieldName) => {
   return key ? row[key] : null;
 };
 
-// ✅ THAY ĐỔI 5: importClasses
 const importClasses = async (file) => {
   if (!file) {
     throw new Error("No file uploaded");
   }
 
-  const schoolYearId = await getActiveSchoolYearId();  // ✅ Đổi tên biến
+  const schoolYearId = await getActiveSchoolYearId();
 
   const workbook = XLSX.read(file.buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
@@ -246,12 +242,11 @@ const importClasses = async (file) => {
 
       const existingClass = await Class.findOne({ 
         name: trimmedName, 
-        schoolYearId,  // ✅ Đổi tên field
+        schoolYearId,
         status: 'active' 
       });
       
       if (existingClass) {
-        // ✅ Lấy year để hiển thị message
         const schoolYear = await SchoolYear.findById(schoolYearId);
         results.failed.push({
           row: rowNumber,
@@ -265,7 +260,7 @@ const importClasses = async (file) => {
         name: trimmedName,
         grade: grade.toString().trim(),
         studentCount: studentCount ? parseInt(studentCount) : 0,
-        schoolYearId,      // ✅ Đổi tên field
+        schoolYearId,
         status: 'active'
       });
 

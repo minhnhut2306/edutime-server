@@ -1,5 +1,6 @@
 const subjectService = require("../services/subjectService");
 const asyncHandler = require("../middleware/asyncHandler");
+const SchoolYear = require("../models/schoolYearModel"); // ✅ THÊM
 const {
     successResponse,
     createdResponse,
@@ -9,9 +10,22 @@ const {
 } = require("../helper/createResponse.helper");
 
 const getSubjects = asyncHandler(async (req, res) => {
+    // ✅ FIX: Convert schoolYear string sang schoolYearId
+    let schoolYearId = null;
+    if (req.query.schoolYear) {
+        const schoolYear = await SchoolYear.findOne({ year: req.query.schoolYear });
+        if (!schoolYear) {
+            return res.status(404).json({
+                code: 404,
+                msg: `Không tìm thấy năm học ${req.query.schoolYear}`
+            });
+        }
+        schoolYearId = schoolYear._id;
+    }
+
     const filters = {
         name: req.query.name,
-        schoolYear: req.query.schoolYear,
+        schoolYearId, // ✅ Truyền ObjectId
     };
 
     const subjects = await subjectService.getSubjects(filters);

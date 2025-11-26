@@ -1,6 +1,7 @@
 const teachingRecordsService = require("../services/teachingRecordsService");
 const asyncHandler = require("../middleware/asyncHandler");
 const Teacher = require("../models/teacherModel");
+const SchoolYear = require("../models/schoolYearModel");
 const {
   successResponse,
   createdResponse,
@@ -15,6 +16,8 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
   const role = req.user?.role;
   const userId =
     req.user?.userId || req.user?._id || req.user?.id || req.user?.sub;
+
+  // ✅ FIX: Convert schoolYear string sang ObjectId
   let schoolYearId = null;
   if (querySchoolYear) {
     const schoolYearDoc = await SchoolYear.findOne({ year: querySchoolYear });
@@ -30,7 +33,7 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
     if (queryTeacherId) {
       const result = await teachingRecordsService.getTeachingRecordsByTeacher(
         queryTeacherId,
-        schoolYearId
+        schoolYearId // ✅ Truyền ObjectId
       );
       if (!result.success) {
         const statusCode = result.statusCode || 500;
@@ -45,7 +48,7 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
     }
 
     const resultAll = await teachingRecordsService.getAllTeachingRecords(
-      schoolYearId
+      schoolYearId // ✅ Truyền ObjectId
     );
     if (!resultAll.success) {
       const statusCode = resultAll.statusCode || 500;
@@ -57,6 +60,7 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
       successResponse("Lấy danh sách bản ghi thành công", resultAll.data)
     );
   }
+
   if (!userId) {
     return res.status(401).json(forbiddenResponse("Không xác định được user"));
   }
@@ -79,7 +83,7 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
   const targetTeacherId = teacherDoc._id.toString();
   const result = await teachingRecordsService.getTeachingRecordsByTeacher(
     targetTeacherId,
-    schoolYearId 
+    schoolYearId // ✅ Truyền ObjectId
   );
 
   if (!result.success) {
@@ -102,21 +106,22 @@ const createTeachingRecord = asyncHandler(async (req, res) => {
     subjectId,
     classId,
     periods,
-    schoolYearId,
+    schoolYear,
     recordType,
     notes,
   } = req.body;
 
-  console.log("🎯 CONTROLLER CREATE - req.body:", {
-    teacherId,
-    weekId,
-    subjectId,
-    classId,
-    periods,
-    schoolYearId,
-    recordType,
-    notes,
-  });
+  // ✅ FIX: Convert schoolYear string sang ObjectId
+  let schoolYearId = null;
+  if (schoolYear) {
+    const schoolYearDoc = await SchoolYear.findOne({ year: schoolYear });
+    if (!schoolYearDoc) {
+      return res
+        .status(404)
+        .json(badRequestResponse(`Không tìm thấy năm học ${schoolYear}`));
+    }
+    schoolYearId = schoolYearDoc._id;
+  }
 
   if (
     !teacherId ||
@@ -133,13 +138,6 @@ const createTeachingRecord = asyncHandler(async (req, res) => {
     return res.status(400).json(badRequestResponse("Số tiết phải từ 1 đến 20"));
   }
 
-  const schoolYearIdRegex = /^\d{4}-\d{4}$/;
-  if (!schoolYearIdRegex.test(schoolYearId)) {
-    return res
-      .status(400)
-      .json(badRequestResponse("Năm học không đúng định dạng (VD: 2024-2025)"));
-  }
-
   const createdBy = req.user?.email || req.user?.username || "system";
 
   const result = await teachingRecordsService.createTeachingRecord({
@@ -148,7 +146,7 @@ const createTeachingRecord = asyncHandler(async (req, res) => {
     subjectId,
     classId,
     periods,
-    schoolYearId,
+    schoolYearId, // ✅ Truyền ObjectId
     createdBy,
     recordType: recordType || "teaching",
     notes: notes || "",
@@ -167,12 +165,6 @@ const createTeachingRecord = asyncHandler(async (req, res) => {
     }
     return res.status(statusCode).json(badRequestResponse(result.message));
   }
-
-  console.log("✅ CONTROLLER CREATE - Response data:", {
-    id: result.data._id,
-    recordType: result.data.recordType,
-    notes: result.data.notes,
-  });
 
   return res
     .status(201)
@@ -244,25 +236,25 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
     subjectId,
     classId,
     periods,
-    schoolYearId,
+    schoolYear,
     recordType,
     notes,
   } = req.body;
 
-  console.log("🎯 CONTROLLER UPDATE - req.body:", {
-    id,
-    teacherId,
-    weekId,
-    subjectId,
-    classId,
-    periods,
-    schoolYearId,
-    recordType,
-    notes,
-  });
-
   if (!id) {
     return res.status(400).json(badRequestResponse("ID không hợp lệ"));
+  }
+
+  // ✅ FIX: Convert schoolYear string sang ObjectId
+  let schoolYearId = null;
+  if (schoolYear) {
+    const schoolYearDoc = await SchoolYear.findOne({ year: schoolYear });
+    if (!schoolYearDoc) {
+      return res
+        .status(404)
+        .json(badRequestResponse(`Không tìm thấy năm học ${schoolYear}`));
+    }
+    schoolYearId = schoolYearDoc._id;
   }
 
   const role = req.user?.role;
@@ -277,7 +269,7 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
         subjectId,
         classId,
         periods,
-        schoolYearId,
+        schoolYearId, // ✅ Truyền ObjectId
         recordType,
         notes,
       },
@@ -294,12 +286,6 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
         return res.status(409).json(badRequestResponse(result.message));
       return res.status(statusCode).json(serverErrorResponse(result.message));
     }
-
-    console.log("✅ CONTROLLER UPDATE - Response data:", {
-      id: result.data._id,
-      recordType: result.data.recordType,
-      notes: result.data.notes,
-    });
 
     return res.json(
       successResponse("Cập nhật bản ghi thành công", result.data)
@@ -336,7 +322,7 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
       subjectId,
       classId,
       periods,
-      schoolYearId,
+      schoolYearId, // ✅ Truyền ObjectId
       recordType,
       notes,
     },
@@ -353,12 +339,6 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
       return res.status(409).json(badRequestResponse(result.message));
     return res.status(statusCode).json(serverErrorResponse(result.message));
   }
-
-  console.log("✅ CONTROLLER UPDATE - Response data:", {
-    id: result.data._id,
-    recordType: result.data.recordType,
-    notes: result.data.notes,
-  });
 
   return res.json(successResponse("Cập nhật bản ghi thành công", result.data));
 });

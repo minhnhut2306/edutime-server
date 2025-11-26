@@ -1,21 +1,20 @@
 const Week = require("../models/weekModel");
 const SchoolYear = require("../models/schoolYearModel");
 
-// ✅ THAY ĐỔI 1: Helper function
 const getActiveSchoolYearId = async () => {
   const activeYear = await SchoolYear.findOne({ status: 'active' });
   if (!activeYear) {
     throw new Error('Không có năm học đang hoạt động. Vui lòng tạo năm học mới!');
   }
-  return activeYear._id;  // ✅ Trả về _id
+  return activeYear._id;
 };
 
-// ✅ THAY ĐỔI 2: getWeeks
+// ✅ FIX: Nhận schoolYearId từ controller
 const getWeeks = async (filters = {}) => {
-  const schoolYearId = await getActiveSchoolYearId();  // ✅ Đổi tên biến
+  const schoolYearId = filters.schoolYearId || await getActiveSchoolYearId();
   
   const query = {
-    schoolYearId,     
+    schoolYearId,
   };
 
   if (filters.weekNumber) {
@@ -26,12 +25,9 @@ const getWeeks = async (filters = {}) => {
   return weeks;
 };
 
-// ✅ THAY ĐỔI 3: checkDateOverlap
 const checkDateOverlap = async (startDate, endDate, schoolYearId, excludeId = null) => {
-  // ✅ Đổi tên tham số: schoolYear → schoolYearId
-  
   const query = {
-    schoolYearId,  // ✅ Đổi tên field
+    schoolYearId,
     status: 'active',
     $or: [
       { startDate: { $lte: startDate }, endDate: { $gte: startDate } },
@@ -47,10 +43,9 @@ const checkDateOverlap = async (startDate, endDate, schoolYearId, excludeId = nu
   return Week.findOne(query);
 };
 
-// ✅ THAY ĐỔI 4: createWeek
 const createWeek = async (data) => {
   const { startDate, endDate } = data;
-  const schoolYearId = await getActiveSchoolYearId();  // ✅ Đổi tên biến
+  const schoolYearId = await getActiveSchoolYearId();
 
   if (!startDate || !endDate) {
     throw new Error("Start date and end date are required");
@@ -63,14 +58,12 @@ const createWeek = async (data) => {
     throw new Error("End date must be after start date");
   }
 
-  // ✅ Truyền schoolYearId vào checkDateOverlap
   const overlappingWeek = await checkDateOverlap(start, end, schoolYearId);
 
   if (overlappingWeek) {
     throw new Error("Week period overlaps with existing week");
   }
 
-  // ✅ Tính weekNumber trong năm học
   const lastWeek = await Week.findOne({ schoolYearId, status: 'active' })
     .sort({ weekNumber: -1 });
   const weekNumber = lastWeek ? lastWeek.weekNumber + 1 : 1;
@@ -79,14 +72,13 @@ const createWeek = async (data) => {
     weekNumber,
     startDate: start,
     endDate: end,
-    schoolYearId,      // ✅ Đổi tên field
+    schoolYearId,
     status: 'active'
   });
 
   return week;
 };
 
-// ✅ THAY ĐỔI 5: updateWeek
 const updateWeek = async (id, data) => {
   const week = await Week.findById(id);
   if (!week) {
@@ -102,11 +94,10 @@ const updateWeek = async (id, data) => {
     throw new Error("End date must be after start date");
   }
 
-  // ✅ Truyền week.schoolYearId
   const overlappingWeek = await checkDateOverlap(
     checkStartDate, 
     checkEndDate, 
-    week.schoolYearId,  // ✅ Đổi tên field
+    week.schoolYearId,
     id
   );
 
@@ -127,7 +118,6 @@ const updateWeek = async (id, data) => {
   return updatedWeek;
 };
 
-// ✅ THAY ĐỔI 6: deleteWeek
 const deleteWeek = async (id) => {
   const week = await Week.findByIdAndDelete(id);
   
@@ -135,11 +125,10 @@ const deleteWeek = async (id) => {
     throw new Error("Week not found");
   }
 
-  // ✅ Cập nhật weekNumber trong cùng năm học
   await Week.updateMany(
     { 
       weekNumber: { $gt: week.weekNumber },
-      schoolYearId: week.schoolYearId,  // ✅ Đổi tên field
+      schoolYearId: week.schoolYearId,
       status: 'active'
     },
     { $inc: { weekNumber: -1 } }

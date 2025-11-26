@@ -1,5 +1,6 @@
 const reportsService = require("../services/reportsService");
 const asyncHandler = require("../middleware/asyncHandler");
+const SchoolYear = require("../models/schoolYearModel"); // ✅ THÊM
 const {
   successResponse,
   notFoundResponse,
@@ -10,13 +11,23 @@ const {
 
 const getTeacherReport = asyncHandler(async (req, res) => {
   const { id: teacherId } = req.params;
-  const { type = 'year', schoolYearId, month, weekId, semester, bcNumber } = req.query;
+  const { type = 'year', schoolYear, month, weekId, semester, bcNumber } = req.query;
 
   if (!teacherId) {
     return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherId là bắt buộc"));
   }
 
-  const filters = { schoolYearId, month, weekId, semester };
+  // ✅ FIX: Convert schoolYear string sang ObjectId
+  let schoolYearId = null;
+  if (schoolYear) {
+    const schoolYearDoc = await SchoolYear.findOne({ year: schoolYear });
+    if (!schoolYearDoc) {
+      return res.status(404).json(notFoundResponse(`Không tìm thấy năm học ${schoolYear}`));
+    }
+    schoolYearId = schoolYearDoc._id;
+  }
+
+  const filters = { schoolYearId, month, weekId, semester }; // ✅ Đổi sang schoolYearId
   
   if (type === 'bc' && bcNumber) {
     const result = await reportsService.getBCReport(teacherId, schoolYearId, parseInt(bcNumber));
@@ -40,7 +51,7 @@ const getTeacherReport = asyncHandler(async (req, res) => {
 
 const exportReport = asyncHandler(async (req, res) => {
   try {
-    const { teacherId, teacherIds, schoolYearId, type = 'bc', bcNumber, weekId, weekIds, semester } = req.query;
+    const { teacherId, teacherIds, schoolYear, type = 'bc', bcNumber, weekId, weekIds, semester } = req.query;
 
     let targetTeacherIds;
     if (teacherIds) {
@@ -57,11 +68,20 @@ const exportReport = asyncHandler(async (req, res) => {
       );
     }
 
-    if (!schoolYearId) {
+    if (!schoolYear) {
       return res.status(STATUS_CODES.BAD_REQUEST).json(
-        badRequestResponse("schoolYearId là bắt buộc (VD: 2024-2025)")
+        badRequestResponse("schoolYear là bắt buộc (VD: 2024-2025)")
       );
     }
+
+    // ✅ FIX: Convert schoolYear string sang ObjectId
+    const schoolYearDoc = await SchoolYear.findOne({ year: schoolYear });
+    if (!schoolYearDoc) {
+      return res.status(404).json(
+        notFoundResponse(`Không tìm thấy năm học ${schoolYear}`)
+      );
+    }
+    const schoolYearId = schoolYearDoc._id;
 
     const options = { type };
     if (bcNumber) options.bcNumber = parseInt(bcNumber);
@@ -75,13 +95,13 @@ const exportReport = asyncHandler(async (req, res) => {
     }
     if (semester) options.semester = parseInt(semester);
 
-    const result = await reportsService.exportReport(targetTeacherIds, schoolYearId, options);
+    const result = await reportsService.exportReport(targetTeacherIds, schoolYearId, options); // ✅ Truyền ObjectId
 
     if (!result.success) {
       const statusCode = result.statusCode || 500;
       if (statusCode === 404) {
         return res.status(404).json(
-          notFoundResponse(`${result.message}\n\nChi tiết: teacherId=${targetTeacherIds.join(',')}, type=${type}, schoolYearId=${schoolYearId}`)
+          notFoundResponse(`${result.message}\n\nChi tiết: teacherId=${targetTeacherIds.join(',')}, type=${type}, schoolYear=${schoolYear}`)
         );
       }
       return res.status(statusCode).json(
@@ -89,11 +109,11 @@ const exportReport = asyncHandler(async (req, res) => {
       );
     }
 
-    let fileName = `BaoCao_${schoolYearId}`;
-    if (type === 'bc' && bcNumber) fileName = `BC${bcNumber}_${schoolYearId}`;
-    else if (type === 'week') fileName = `BaoCaoTuan_${schoolYearId}`;
-    else if (type === 'semester') fileName = `HocKy${semester}_${schoolYearId}`;
-    else if (type === 'year') fileName = `CaNam_${schoolYearId}`;
+    let fileName = `BaoCao_${schoolYear}`;
+    if (type === 'bc' && bcNumber) fileName = `BC${bcNumber}_${schoolYear}`;
+    else if (type === 'week') fileName = `BaoCaoTuan_${schoolYear}`;
+    else if (type === 'semester') fileName = `HocKy${semester}_${schoolYear}`;
+    else if (type === 'year') fileName = `CaNam_${schoolYear}`;
     
     if (targetTeacherIds.length > 1) fileName += `_${targetTeacherIds.length}GV`;
     fileName += '.xlsx';
@@ -110,12 +130,20 @@ const exportReport = asyncHandler(async (req, res) => {
   }
 });
 
+// ✅ Fix các hàm export khác tương tự...
 const exportMonthReport = asyncHandler(async (req, res) => {
-  const { teacherId, teacherIds, schoolYearId, month, bcNumber } = req.query;
+  const { teacherId, teacherIds, schoolYear, month, bcNumber } = req.query;
   
-  if (!schoolYearId) {
-    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("schoolYearId là bắt buộc"));
+  if (!schoolYear) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("schoolYear là bắt buộc"));
   }
+
+  // ✅ FIX: Convert schoolYear string sang ObjectId
+  const schoolYearDoc = await SchoolYear.findOne({ year: schoolYear });
+  if (!schoolYearDoc) {
+    return res.status(404).json(notFoundResponse(`Không tìm thấy năm học ${schoolYear}`));
+  }
+  const schoolYearId = schoolYearDoc._id;
   
   let targetIds;
   if (teacherIds) {
@@ -129,7 +157,7 @@ const exportMonthReport = asyncHandler(async (req, res) => {
   }
 
   const bc = bcNumber ? parseInt(bcNumber) : parseInt(month);
-  const result = await reportsService.exportBCReport(targetIds, schoolYearId, bc);
+  const result = await reportsService.exportBCReport(targetIds, schoolYearId, bc); // ✅ Truyền ObjectId
 
   if (!result.success) {
     return res.status(result.statusCode || 500).json(
@@ -137,7 +165,7 @@ const exportMonthReport = asyncHandler(async (req, res) => {
     );
   }
 
-  const fileName = `BC${bc}_${schoolYearId}.xlsx`;
+  const fileName = `BC${bc}_${schoolYear}.xlsx`;
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
@@ -146,7 +174,7 @@ const exportMonthReport = asyncHandler(async (req, res) => {
 });
 
 const exportWeekReport = asyncHandler(async (req, res) => {
-  const { teacherId, weekId, weekIds, schoolYearId } = req.query;
+  const { teacherId, weekId, weekIds, schoolYear } = req.query;
 
   if (!teacherId) {
     return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherId là bắt buộc"));
@@ -155,17 +183,24 @@ const exportWeekReport = asyncHandler(async (req, res) => {
     return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("weekId hoặc weekIds là bắt buộc"));
   }
 
-  if (!schoolYearId) {
-    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("schoolYearId là bắt buộc"));
+  if (!schoolYear) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("schoolYear là bắt buộc"));
   }
+
+  // ✅ FIX: Convert schoolYear string sang ObjectId
+  const schoolYearDoc = await SchoolYear.findOne({ year: schoolYear });
+  if (!schoolYearDoc) {
+    return res.status(404).json(notFoundResponse(`Không tìm thấy năm học ${schoolYear}`));
+  }
+  const schoolYearId = schoolYearDoc._id;
 
   let result;
   if (weekIds) {
     let weekIdArray;
     try { weekIdArray = JSON.parse(weekIds); } catch (e) { weekIdArray = [weekId]; }
-    result = await reportsService.exportWeekRangeReport(teacherId, weekIdArray, schoolYearId);
+    result = await reportsService.exportWeekRangeReport(teacherId, weekIdArray, schoolYearId); // ✅ Truyền ObjectId
   } else {
-    result = await reportsService.exportWeekReport(teacherId, weekId, schoolYearId);
+    result = await reportsService.exportWeekReport(teacherId, weekId, schoolYearId); // ✅ Truyền ObjectId
   }
 
   if (!result.success) {
@@ -174,7 +209,7 @@ const exportWeekReport = asyncHandler(async (req, res) => {
     );
   }
 
-  const fileName = `BaoCaoTuan_${schoolYearId}.xlsx`;
+  const fileName = `BaoCaoTuan_${schoolYear}.xlsx`;
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
@@ -183,13 +218,20 @@ const exportWeekReport = asyncHandler(async (req, res) => {
 });
 
 const exportSemesterReport = asyncHandler(async (req, res) => {
-  const { teacherId, schoolYearId, semester } = req.query;
+  const { teacherId, schoolYear, semester } = req.query;
 
-  if (!teacherId || !schoolYearId || !semester) {
-    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherId, schoolYearId, semester là bắt buộc"));
+  if (!teacherId || !schoolYear || !semester) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherId, schoolYear, semester là bắt buộc"));
   }
 
-  const result = await reportsService.exportSemesterReport(teacherId, schoolYearId, parseInt(semester));
+  // ✅ FIX: Convert schoolYear string sang ObjectId
+  const schoolYearDoc = await SchoolYear.findOne({ year: schoolYear });
+  if (!schoolYearDoc) {
+    return res.status(404).json(notFoundResponse(`Không tìm thấy năm học ${schoolYear}`));
+  }
+  const schoolYearId = schoolYearDoc._id;
+
+  const result = await reportsService.exportSemesterReport(teacherId, schoolYearId, parseInt(semester)); // ✅ Truyền ObjectId
 
   if (!result.success) {
     return res.status(result.statusCode || 500).json(
@@ -197,7 +239,7 @@ const exportSemesterReport = asyncHandler(async (req, res) => {
     );
   }
 
-  const fileName = `HocKy${semester}_${schoolYearId}.xlsx`;
+  const fileName = `HocKy${semester}_${schoolYear}.xlsx`;
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
@@ -206,15 +248,22 @@ const exportSemesterReport = asyncHandler(async (req, res) => {
 });
 
 const exportYearReport = asyncHandler(async (req, res) => {
-  const { teacherId, schoolYearId, allBC } = req.query;
+  const { teacherId, schoolYear, allBC } = req.query;
 
-  if (!teacherId || !schoolYearId) {
-    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherId, schoolYearId là bắt buộc"));
+  if (!teacherId || !schoolYear) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse("teacherId, schoolYear là bắt buộc"));
   }
 
+  // ✅ FIX: Convert schoolYear string sang ObjectId
+  const schoolYearDoc = await SchoolYear.findOne({ year: schoolYear });
+  if (!schoolYearDoc) {
+    return res.status(404).json(notFoundResponse(`Không tìm thấy năm học ${schoolYear}`));
+  }
+  const schoolYearId = schoolYearDoc._id;
+
   const result = allBC === 'true' 
-    ? await reportsService.exportAllBCReport(teacherId, schoolYearId)
-    : await reportsService.exportYearReport(teacherId, schoolYearId);
+    ? await reportsService.exportAllBCReport(teacherId, schoolYearId) // ✅ Truyền ObjectId
+    : await reportsService.exportYearReport(teacherId, schoolYearId); // ✅ Truyền ObjectId
 
   if (!result.success) {
     return res.status(result.statusCode || 500).json(
@@ -222,7 +271,7 @@ const exportYearReport = asyncHandler(async (req, res) => {
     );
   }
 
-  const fileName = `BaoCaoNam_${schoolYearId}.xlsx`;
+  const fileName = `BaoCaoNam_${schoolYear}.xlsx`;
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
