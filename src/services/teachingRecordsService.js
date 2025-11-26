@@ -4,9 +4,15 @@ const Week = require("../models/weekModel");
 const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
 
-const getAllTeachingRecords = async () => {
+const getAllTeachingRecords = async (schoolYearId = null) => {
   try {
-    const records = await TeachingRecords.find({})
+    const query = {};
+  
+    if (schoolYearId) {
+      query.schoolYearId = schoolYearId;
+    }
+
+    const records = await TeachingRecords.find(query)
       .populate("weekId", "weekNumber startDate endDate schoolYearId")
       .populate("subjectId", "name code")
       .populate("classId", "name grade")
@@ -18,7 +24,7 @@ const getAllTeachingRecords = async () => {
   }
 };
 
-const getTeachingRecordsByTeacher = async (teacherId) => {
+const getTeachingRecordsByTeacher = async (teacherId, schoolYearId = null) => {
   try {
     const teacher = await Teacher.findById(teacherId);
     if (!teacher) {
@@ -28,7 +34,14 @@ const getTeachingRecordsByTeacher = async (teacherId) => {
         message: "Không tìm thấy giáo viên",
       };
     }
-    const records = await TeachingRecords.find({ teacherId })
+    
+    const query = { teacherId };
+    
+    if (schoolYearId) {
+      query.schoolYearId = schoolYearId;
+    }
+
+    const records = await TeachingRecords.find(query)
       .populate("weekId", "weekNumber startDate endDate schoolYearId")
       .populate("subjectId", "name code")
       .populate("classId", "name grade")
