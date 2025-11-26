@@ -17,6 +17,8 @@ const getActiveSchoolYearId = async () => {
 };
 
 // ✅ FIX: Đổi tất cả schoolYearIdId thành schoolYearId
+// ✅ FIX: src/services/teacherService.js - Hàm getTeachers
+
 const getTeachers = async (filters = {}) => {
   let schoolYearId;
   if (filters.schoolYear) {
@@ -28,16 +30,16 @@ const getTeachers = async (filters = {}) => {
   } else {
     schoolYearId = await getActiveSchoolYearId();
   }
-  console.log("🔍 Backend query:", { schoolYearId, filters });
-  console.log("🔍 Backend filtering teachers:", {
-    schoolYearId,
-    status: "active",
-  });
 
+  console.log("🔍 Backend query:", { schoolYearId, filters });
+
+  // ✅ FIX: Không filter theo status nữa, lấy tất cả giáo viên của năm học
   const query = {
     schoolYearId,
-    status: "active",
+    // ❌ REMOVED: status: "active"
   };
+
+  console.log("🔍 Backend filtering teachers:", query);
 
   if (filters.name) {
     query.name = { $regex: filters.name, $options: "i" };
@@ -60,6 +62,11 @@ const getTeachers = async (filters = {}) => {
     .populate("subjectIds", "name")
     .populate("mainClassId", "name grade")
     .sort({ createdAt: -1 });
+
+  console.log(
+    `✅ Found ${teachers.length} teachers for schoolYearId:`,
+    schoolYearId
+  );
 
   return teachers;
 };

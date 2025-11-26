@@ -24,8 +24,7 @@ const getClasses = async (filters = {}) => {
   const schoolYearId = await getActiveSchoolYearId();  // ✅ Đổi tên biến
   
   const query = {
-    schoolYearId,      // ✅ Đổi tên field
-    status: 'active'
+    schoolYearId
   };
 
   if (filters.name) {
