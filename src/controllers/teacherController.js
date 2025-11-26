@@ -13,6 +13,7 @@ const getTeachers = asyncHandler(async (req, res) => {
     phone: req.query.phone,
     subjectId: req.query.subjectId,
     mainClassId: req.query.mainClassId,
+    schoolYear: req.query.schoolYear,
   };
 
   const teachers = await teacherService.getTeachers(filters);
