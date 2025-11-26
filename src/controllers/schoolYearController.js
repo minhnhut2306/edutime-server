@@ -98,11 +98,29 @@ const deleteSchoolYear = asyncHandler(async (req, res) => {
   return res.status(200).json(successResponse(`Đã xóa năm học ${year} và toàn bộ dữ liệu liên quan`));
 });
 
+const exportYearData = asyncHandler(async (req, res) => {
+  const { year } = req.params;
+
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json(forbiddenResponse('Chỉ Admin mới có quyền xuất dữ liệu'));
+  }
+
+  const workbook = await schoolYearService.exportYearData(year);
+  const fileName = `DuLieu_NamHoc_${year}.xlsx`;
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+  await workbook.xlsx.write(res);
+  res.end();
+});
+
 module.exports = {
   getSchoolYears,
   getActiveSchoolYear,
   getSchoolYearData,
   createSchoolYear,
   finishSchoolYear,
-  deleteSchoolYear
+  deleteSchoolYear,
+  exportYearData
 };

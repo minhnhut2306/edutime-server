@@ -76,5 +76,6 @@ router.get("/school-years/:year", authMiddleware, schoolYearController.getSchool
 router.post("/school-years", authMiddleware, schoolYearController.createSchoolYear);
 router.post("/school-years/finish", authMiddleware, schoolYearController.finishSchoolYear);
 router.delete("/school-years/:year", authMiddleware, schoolYearController.deleteSchoolYear);
+router.get('/school-years/:year/export', authMiddleware, isAdmin, schoolYearController.exportYearData);
 
 module.exports = router;
