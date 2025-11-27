@@ -4,6 +4,7 @@ const Week = require("../models/weekModel");
 const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
 const ExcelJS = require("exceljs");
+const SchoolYear = require("../models/schoolYearModel");
 
 const getMonthFromWeek = (week) => {
   if (!week || !week.startDate) return 9;
@@ -12,7 +13,6 @@ const getMonthFromWeek = (week) => {
 };
 
 const getWeeksInMonth = async (month, schoolYearId) => {
-  // ✅ FIX: Nhận schoolYearId (ObjectId) thay vì schoolYear (string)
   const allWeeks = await Week.find({ schoolYearId }).sort({ weekNumber: 1 });
   
   const schoolYearDoc = await SchoolYear.findById(schoolYearId);
@@ -21,8 +21,6 @@ const getWeeksInMonth = async (month, schoolYearId) => {
   }
   
   const [startYear, endYear] = schoolYearDoc.year.split("-").map(Number);
-  
-  // Xác định năm cho tháng (tháng 9-12 thuộc năm đầu, tháng 1-8 thuộc năm sau)
   const year = month >= 9 ? startYear : endYear;
 
   return allWeeks.filter((week) => {
