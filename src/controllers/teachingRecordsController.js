@@ -11,29 +11,40 @@ const {
   serverErrorResponse,
 } = require("../helper/createResponse.helper");
 
+// ✅ FIX: src/controllers/teachingRecordsController.js
+
 const getTeachingRecords = asyncHandler(async (req, res) => {
   const { teacherId: queryTeacherId, schoolYear: querySchoolYear } = req.query;
   const role = req.user?.role;
-  const userId =
-    req.user?.userId || req.user?._id || req.user?.id || req.user?.sub;
+  const userId = req.user?.userId || req.user?._id || req.user?.id || req.user?.sub;
+
+  // 🔍 DEBUG LOG
+  console.log('📥 [Controller] getTeachingRecords:', {
+    queryTeacherId,
+    querySchoolYear,
+    role,
+    userId
+  });
 
   // ✅ FIX: Convert schoolYear string sang ObjectId
   let schoolYearId = null;
   if (querySchoolYear) {
     const schoolYearDoc = await SchoolYear.findOne({ year: querySchoolYear });
     if (!schoolYearDoc) {
+      console.log('❌ [Controller] School year not found:', querySchoolYear);
       return res
         .status(404)
         .json(notFoundResponse(`Không tìm thấy năm học ${querySchoolYear}`));
     }
     schoolYearId = schoolYearDoc._id;
+    console.log('✅ [Controller] Found schoolYearId:', schoolYearId.toString());
   }
 
   if (role === "admin") {
     if (queryTeacherId) {
       const result = await teachingRecordsService.getTeachingRecordsByTeacher(
         queryTeacherId,
-        schoolYearId // ✅ Truyền ObjectId
+        schoolYearId
       );
       if (!result.success) {
         const statusCode = result.statusCode || 500;
@@ -42,13 +53,24 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
         }
         return res.status(statusCode).json(serverErrorResponse(result.message));
       }
+      
+      console.log('✅ [Controller] Returning records for teacher:', {
+        count: result.data.length,
+        firstRecord: result.data[0] ? {
+          teacherId: result.data[0].teacherId?.name,
+          weekId: result.data[0].weekId?.weekNumber,
+          classId: result.data[0].classId?.name
+        } : null
+      });
+      
       return res.json(
         successResponse("Lấy danh sách bản ghi thành công", result.data)
       );
     }
 
+    // ✅ FIX: Admin không chọn teacher → lấy TẤT CẢ records
     const resultAll = await teachingRecordsService.getAllTeachingRecords(
-      schoolYearId // ✅ Truyền ObjectId
+      schoolYearId
     );
     if (!resultAll.success) {
       const statusCode = resultAll.statusCode || 500;
@@ -56,11 +78,22 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
         .status(statusCode)
         .json(serverErrorResponse(resultAll.message));
     }
+    
+    console.log('✅ [Controller] Returning ALL records:', {
+      count: resultAll.data.length,
+      firstRecord: resultAll.data[0] ? {
+        teacherId: resultAll.data[0].teacherId?.name,
+        weekId: resultAll.data[0].weekId?.weekNumber,
+        classId: resultAll.data[0].classId?.name
+      } : null
+    });
+    
     return res.json(
       successResponse("Lấy danh sách bản ghi thành công", resultAll.data)
     );
   }
 
+  // User role logic...
   if (!userId) {
     return res.status(401).json(forbiddenResponse("Không xác định được user"));
   }
@@ -83,7 +116,7 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
   const targetTeacherId = teacherDoc._id.toString();
   const result = await teachingRecordsService.getTeachingRecordsByTeacher(
     targetTeacherId,
-    schoolYearId // ✅ Truyền ObjectId
+    schoolYearId
   );
 
   if (!result.success) {

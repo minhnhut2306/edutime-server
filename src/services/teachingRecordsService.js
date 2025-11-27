@@ -4,28 +4,91 @@ const Week = require("../models/weekModel");
 const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
 
+// ✅ FIX: src/services/teachingRecordsService.js
+// ✅ FIX: src/services/teachingRecordsService.js
+
 const getAllTeachingRecords = async (schoolYearId = null) => {
   try {
     const query = {};
   
     if (schoolYearId) {
       query.schoolYearId = schoolYearId;
+      console.log('🔍 [Service] getAllTeachingRecords query:', {
+        schoolYearId: schoolYearId.toString()
+      });
     }
 
     const records = await TeachingRecords.find(query)
-      .populate("weekId", "weekNumber startDate endDate schoolYearId")
-      .populate("subjectId", "name code")
-      .populate("classId", "name grade")
+      // ✅ FIX: POPULATE ĐẦY ĐỦ TẤT CẢ REFERENCES
+      .populate({
+        path: "teacherId",
+        select: "name email phone",
+        model: "Teacher"
+      })
+      .populate({
+        path: "weekId",
+        select: "weekNumber startDate endDate schoolYearId",
+        model: "Week"
+      })
+      .populate({
+        path: "subjectId",
+        select: "name code",
+        model: "Subject"
+      })
+      .populate({
+        path: "classId",
+        select: "name grade studentCount",
+        model: "Class"
+      })
       .sort({ createdAt: -1 });
+
+    console.log('✅ [Service] getAllTeachingRecords result:', {
+      count: records.length,
+      firstRecord: records[0] ? {
+        _id: records[0]._id,
+        teacherId: records[0].teacherId ? 
+          { _id: records[0].teacherId._id, name: records[0].teacherId.name } : 
+          'NOT POPULATED',
+        weekId: records[0].weekId ? 
+          { _id: records[0].weekId._id, weekNumber: records[0].weekId.weekNumber } : 
+          'NOT POPULATED',
+        classId: records[0].classId ? 
+          { _id: records[0].classId._id, name: records[0].classId.name } : 
+          'NOT POPULATED',
+        subjectId: records[0].subjectId ? 
+          { _id: records[0].subjectId._id, name: records[0].subjectId.name } : 
+          'NOT POPULATED',
+        periods: records[0].periods,
+        recordType: records[0].recordType
+      } : null
+    });
 
     return { success: true, data: records };
   } catch (err) {
+    console.error('❌ [Service] getAllTeachingRecords error:', err);
     return { success: false, message: err.message };
   }
 };
 
 const getTeachingRecordsByTeacher = async (teacherId, schoolYearId = null) => {
   try {
+    // ✅ FIX: Validate teacherId
+    if (!teacherId) {
+      console.log('⚠️ [Service] No teacherId provided');
+      return { success: true, data: [], total: 0 };
+    }
+
+    // ✅ FIX: Kiểm tra ObjectId hợp lệ
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(teacherId)) {
+      console.error('❌ [Service] Invalid teacherId:', teacherId);
+      return {
+        success: false,
+        statusCode: 400,
+        message: `teacherId không hợp lệ: ${teacherId}`
+      };
+    }
+
     const teacher = await Teacher.findById(teacherId);
     if (!teacher) {
       return {
@@ -39,16 +102,52 @@ const getTeachingRecordsByTeacher = async (teacherId, schoolYearId = null) => {
     
     if (schoolYearId) {
       query.schoolYearId = schoolYearId;
+      console.log('🔍 [Service] getTeachingRecordsByTeacher query:', {
+        teacherId: teacherId.toString(),
+        teacherName: teacher.name,
+        schoolYearId: schoolYearId.toString()
+      });
     }
 
     const records = await TeachingRecords.find(query)
-      .populate("weekId", "weekNumber startDate endDate schoolYearId")
-      .populate("subjectId", "name code")
-      .populate("classId", "name grade")
+      // ✅ FIX: POPULATE ĐẦY ĐỦ
+      .populate({
+        path: "teacherId",
+        select: "name email phone",
+        model: "Teacher"
+      })
+      .populate({
+        path: "weekId",
+        select: "weekNumber startDate endDate schoolYearId",
+        model: "Week"
+      })
+      .populate({
+        path: "subjectId",
+        select: "name code",
+        model: "Subject"
+      })
+      .populate({
+        path: "classId",
+        select: "name grade studentCount",
+        model: "Class"
+      })
       .sort({ createdAt: -1 });
+
+    console.log('✅ [Service] getTeachingRecordsByTeacher result:', {
+      count: records.length,
+      teacherName: teacher.name,
+      firstRecord: records[0] ? {
+        _id: records[0]._id,
+        teacherId: records[0].teacherId?.name || 'NOT POPULATED',
+        weekId: records[0].weekId?.weekNumber || 'NOT POPULATED',
+        classId: records[0].classId?.name || 'NOT POPULATED',
+        subjectId: records[0].subjectId?.name || 'NOT POPULATED'
+      } : null
+    });
 
     return { success: true, data: records, total: records.length };
   } catch (err) {
+    console.error('❌ [Service] getTeachingRecordsByTeacher error:', err);
     return { success: false, message: err.message };
   }
 };
