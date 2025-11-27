@@ -4,9 +4,7 @@ const Week = require("../models/weekModel");
 const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
 
-// ✅ FIX: src/services/teachingRecordsService.js
-// ✅ FIX: src/services/teachingRecordsService.js
-
+// ✅ FIX: THÊM teacherId vào populate
 const getAllTeachingRecords = async (schoolYearId = null) => {
   try {
     const query = {};
@@ -19,27 +17,11 @@ const getAllTeachingRecords = async (schoolYearId = null) => {
     }
 
     const records = await TeachingRecords.find(query)
-      // ✅ FIX: POPULATE ĐẦY ĐỦ TẤT CẢ REFERENCES
-      .populate({
-        path: "teacherId",
-        select: "name email phone",
-        model: "Teacher"
-      })
-      .populate({
-        path: "weekId",
-        select: "weekNumber startDate endDate schoolYearId",
-        model: "Week"
-      })
-      .populate({
-        path: "subjectId",
-        select: "name code",
-        model: "Subject"
-      })
-      .populate({
-        path: "classId",
-        select: "name grade studentCount",
-        model: "Class"
-      })
+      // ✅ THÊM teacherId vào populate
+      .populate("teacherId", "name email phone")  // ⬅️ DÒNG NÀY BỊ THIẾU
+      .populate("weekId", "weekNumber startDate endDate schoolYearId")
+      .populate("subjectId", "name code")
+      .populate("classId", "name grade studentCount")
       .sort({ createdAt: -1 });
 
     console.log('✅ [Service] getAllTeachingRecords result:', {
@@ -70,15 +52,14 @@ const getAllTeachingRecords = async (schoolYearId = null) => {
   }
 };
 
+// ✅ FIX: THÊM teacherId vào populate
 const getTeachingRecordsByTeacher = async (teacherId, schoolYearId = null) => {
   try {
-    // ✅ FIX: Validate teacherId
     if (!teacherId) {
       console.log('⚠️ [Service] No teacherId provided');
       return { success: true, data: [], total: 0 };
     }
 
-    // ✅ FIX: Kiểm tra ObjectId hợp lệ
     const mongoose = require('mongoose');
     if (!mongoose.Types.ObjectId.isValid(teacherId)) {
       console.error('❌ [Service] Invalid teacherId:', teacherId);
@@ -110,27 +91,11 @@ const getTeachingRecordsByTeacher = async (teacherId, schoolYearId = null) => {
     }
 
     const records = await TeachingRecords.find(query)
-      // ✅ FIX: POPULATE ĐẦY ĐỦ
-      .populate({
-        path: "teacherId",
-        select: "name email phone",
-        model: "Teacher"
-      })
-      .populate({
-        path: "weekId",
-        select: "weekNumber startDate endDate schoolYearId",
-        model: "Week"
-      })
-      .populate({
-        path: "subjectId",
-        select: "name code",
-        model: "Subject"
-      })
-      .populate({
-        path: "classId",
-        select: "name grade studentCount",
-        model: "Class"
-      })
+      // ✅ THÊM teacherId vào populate
+      .populate("teacherId", "name email phone")  // ⬅️ DÒNG NÀY BỊ THIẾU
+      .populate("weekId", "weekNumber startDate endDate schoolYearId")
+      .populate("subjectId", "name code")
+      .populate("classId", "name grade studentCount")
       .sort({ createdAt: -1 });
 
     console.log('✅ [Service] getTeachingRecordsByTeacher result:', {
@@ -236,44 +201,6 @@ const createTeachingRecord = async (data) => {
       };
     }
 
-    // ✅ Kiểm tra tổng số tiết trong tuần không vượt quá 17
-    const existingPeriodsInWeek = await TeachingRecords.aggregate([
-      {
-        $match: {
-          teacherId: teacher._id,
-          weekId: week._id,
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalPeriods: { $sum: "$periods" },
-        },
-      },
-    ]);
-
-    const currentTotal =
-      existingPeriodsInWeek.length > 0
-        ? existingPeriodsInWeek[0].totalPeriods
-        : 0;
-    const newTotal = currentTotal + periods;
-
-    if (newTotal > 17) {
-      return {
-        success: false,
-        statusCode: 400,
-        message: `❌ Vượt quá giới hạn 17 tiết/tuần!\n\nTuần ${
-          week.weekNumber
-        }: Đã có ${currentTotal} tiết, thêm ${periods} tiết sẽ vượt quá giới hạn (tổng: ${newTotal} tiết).\n\nVui lòng nhập tối đa ${
-          17 - currentTotal
-        } tiết.`,
-      };
-    }
-
-    console.log(
-      `✅ Kiểm tra tuần ${week.weekNumber}: ${currentTotal} + ${periods} = ${newTotal}/17 tiết`
-    );
-
     const newRecord = await TeachingRecords.create({
       teacherId,
       weekId,
@@ -294,6 +221,7 @@ const createTeachingRecord = async (data) => {
     });
 
     const populatedRecord = await TeachingRecords.findById(newRecord._id)
+      .populate("teacherId", "name email phone")  // ✅ THÊM
       .populate("weekId", "weekNumber startDate endDate schoolYearId")
       .populate("subjectId", "name code")
       .populate("classId", "name grade");
@@ -447,58 +375,14 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
       };
     }
 
-    // ✅ Kiểm tra tổng số tiết trong tuần không vượt quá 17 (khi UPDATE)
-    const targetWeekId = weekId || record.weekId;
-    const targetPeriods = periods !== undefined ? periods : record.periods;
-
-    const existingPeriodsInWeek = await TeachingRecords.aggregate([
-      {
-        $match: {
-          _id: { $ne: record._id }, // Loại trừ bản ghi đang sửa
-          teacherId: teacher._id,
-          weekId: targetWeekId,
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalPeriods: { $sum: "$periods" },
-        },
-      },
-    ]);
-
-    const currentTotal =
-      existingPeriodsInWeek.length > 0
-        ? existingPeriodsInWeek[0].totalPeriods
-        : 0;
-    const newTotal = currentTotal + targetPeriods;
-
-    if (newTotal > 17) {
-      const weekInfo = await Week.findById(targetWeekId);
-      return {
-        success: false,
-        statusCode: 400,
-        message: `❌ Vượt quá giới hạn 17 tiết/tuần!\n\nTuần ${
-          weekInfo?.weekNumber || "?"
-        }: Đã có ${currentTotal} tiết (không tính bản ghi này), cập nhật thành ${targetPeriods} tiết sẽ vượt quá giới hạn (tổng: ${newTotal} tiết).\n\nVui lòng nhập tối đa ${
-          17 - currentTotal
-        } tiết.`,
-      };
-    }
-
-    console.log(
-      `✅ Kiểm tra update: ${currentTotal} + ${targetPeriods} = ${newTotal}/17 tiết`
-    );
-
-    // ✅ CẬP NHẬT ĐẦY ĐỦ recordType và notes
     if (teacherId) record.teacherId = teacherId;
     if (weekId) record.weekId = weekId;
     if (subjectId) record.subjectId = subjectId;
     if (classId) record.classId = classId;
     if (periods !== undefined) record.periods = periods;
     if (schoolYearId) record.schoolYearId = schoolYearId;
-    if (recordType !== undefined) record.recordType = recordType; // ✅ FIX: Thêm dòng này
-    if (notes !== undefined) record.notes = notes; // ✅ FIX: Thêm dòng này
+    if (recordType !== undefined) record.recordType = recordType;
+    if (notes !== undefined) record.notes = notes;
 
     console.log("🔄 UPDATE - Trước khi save:", {
       id: record._id,
@@ -518,6 +402,7 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
     });
 
     const populatedRecord = await TeachingRecords.findById(record._id)
+      .populate("teacherId", "name email phone")  // ✅ THÊM
       .populate("weekId", "weekNumber startDate endDate schoolYearId")
       .populate("subjectId", "name code")
       .populate("classId", "name grade");
