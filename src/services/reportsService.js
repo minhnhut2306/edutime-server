@@ -11,13 +11,19 @@ const getMonthFromWeek = (week) => {
   return startDate.getMonth() + 1;
 };
 
-const getWeeksInMonth = async (month, schoolYear) => {
-  const allWeeks = await Week.find({}).sort({ weekNumber: 1 });
+const getWeeksInMonth = async (month, schoolYearId) => {
+  // ✅ FIX: Nhận schoolYearId (ObjectId) thay vì schoolYear (string)
+  const allWeeks = await Week.find({ schoolYearId }).sort({ weekNumber: 1 });
+  
   const schoolYearDoc = await SchoolYear.findById(schoolYearId);
   if (!schoolYearDoc) {
     throw new Error("Năm học không tồn tại");
   }
+  
   const [startYear, endYear] = schoolYearDoc.year.split("-").map(Number);
+  
+  // Xác định năm cho tháng (tháng 9-12 thuộc năm đầu, tháng 1-8 thuộc năm sau)
+  const year = month >= 9 ? startYear : endYear;
 
   return allWeeks.filter((week) => {
     const weekStart = new Date(week.startDate);
@@ -466,18 +472,29 @@ const generateFileName = (teacher, schoolYear, options = {}) => {
   return `BaoCao_${teacherShortName}_${schoolYear}_${timestamp}.xlsx`;
 };
 
-const exportReport = async (teacherIds, schoolYear, options = {}) => {
+const exportReport = async (teacherIds, schoolYearId, options = {}) => {
   try {
     const { type = "bc", bcNumber, weekId, weekIds, semester } = options;
-    const teacherIdArray = Array.isArray(teacherIds)
-      ? teacherIds
-      : [teacherIds];
+    const teacherIdArray = Array.isArray(teacherIds) ? teacherIds : [teacherIds];
 
-    const allWeeks = await Week.find({}).sort({ weekNumber: 1 });
+    console.log('🔍 exportReport received:', {
+      teacherIds: teacherIdArray,
+      schoolYearId: schoolYearId.toString(),
+      type
+    });
+
+    // ✅ Query với schoolYearId (ObjectId)
+    const allWeeks = await Week.find({ schoolYearId }).sort({ weekNumber: 1 });
+    
+    console.log('📅 Found weeks:', allWeeks.length, 'for schoolYearId:', schoolYearId.toString());
+
+    // ✅ Lấy thông tin năm học để hiển thị
+    const schoolYearDoc = await SchoolYear.findById(schoolYearId);
+    const schoolYearString = schoolYearDoc?.year || 'Unknown';
 
     const workbook = new ExcelJS.Workbook();
     let sheetCount = 0;
-    let primaryTeacher = null; // ← THÊM DÒNG NÀY
+    let primaryTeacher = null;
 
     for (const teacherId of teacherIdArray) {
       const teacher = await Teacher.findById(teacherId)
@@ -485,15 +502,22 @@ const exportReport = async (teacherIds, schoolYear, options = {}) => {
         .populate("mainClassId", "name grade");
 
       if (!teacher) {
+        console.log('⚠️ Teacher not found:', teacherId);
         continue;
       }
 
-      // ← THÊM 3 DÒNG NÀY
       if (!primaryTeacher) {
         primaryTeacher = teacher;
       }
 
-      let query = { teacherId: teacherId, schoolYear: schoolYear };
+      // ✅ Query với schoolYearId (ObjectId)
+      let query = { teacherId: teacherId, schoolYearId: schoolYearId };
+
+      console.log('🔍 Query TeachingRecords:', {
+        teacherId,
+        schoolYearId: schoolYearId.toString(),
+        type
+      });
 
       if (type === "week" && weekId) {
         query.weekId = weekId;
@@ -512,6 +536,8 @@ const exportReport = async (teacherIds, schoolYear, options = {}) => {
         .populate("subjectId", "name")
         .populate("classId", "name grade")
         .sort({ "weekId.weekNumber": 1 });
+
+      console.log('📊 Found records:', records.length, 'for teacher:', teacher.name);
 
       if (records.length === 0) {
         continue;
@@ -533,7 +559,8 @@ const exportReport = async (teacherIds, schoolYear, options = {}) => {
         const monthData = monthGroups[month];
         if (!monthData || monthData.records.length === 0) continue;
 
-        const weeksInMonth = await getWeeksInMonth(month, schoolYear);
+        // ✅ getWeeksInMonth cần nhận schoolYearId
+        const weeksInMonth = await getWeeksInMonth(month, schoolYearId);
 
         const teacherShortName = teacher.name.split(" ").pop();
         const sheetName =
@@ -550,7 +577,7 @@ const exportReport = async (teacherIds, schoolYear, options = {}) => {
           monthData.records,
           weeksInMonth,
           month,
-          schoolYear
+          schoolYearString  // ✅ Truyền string để hiển thị
         );
         sheetCount++;
       }
@@ -560,23 +587,22 @@ const exportReport = async (teacherIds, schoolYear, options = {}) => {
       return {
         success: false,
         statusCode: 404,
-        message: `Không tìm thấy dữ liệu giảng dạy cho năm học ${schoolYear}.\n\nGiáo viên chưa nhập tiết dạy hoặc dữ liệu thuộc năm học khác.`,
+        message: `Không tìm thấy dữ liệu giảng dạy cho năm học ${schoolYearString}.\n\nGiáo viên chưa nhập tiết dạy hoặc dữ liệu thuộc năm học khác.`,
       };
     }
 
-    // ← THÊM 2 DÒNG NÀY
-    const fileName = generateFileName(primaryTeacher, schoolYear, options);
+    const fileName = generateFileName(primaryTeacher, schoolYearString, options);
 
-    // ← SỬA DÒNG RETURN NÀY
     return {
       success: true,
       data: {
         workbook,
         sheetCount,
-        fileName, // ← THÊM fileName
+        fileName,
       },
     };
   } catch (error) {
+    console.error('❌ exportReport error:', error);
     return {
       success: false,
       statusCode: 500,

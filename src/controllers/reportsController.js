@@ -1,6 +1,6 @@
 const reportsService = require("../services/reportsService");
 const asyncHandler = require("../middleware/asyncHandler");
-const SchoolYear = require("../models/schoolYearModel"); // ✅ THÊM
+const SchoolYear = require("../models/schoolYearModel");
 const {
   successResponse,
   notFoundResponse,
@@ -27,7 +27,7 @@ const getTeacherReport = asyncHandler(async (req, res) => {
     schoolYearId = schoolYearDoc._id;
   }
 
-  const filters = { schoolYearId, month, weekId, semester }; // ✅ Đổi sang schoolYearId
+  const filters = { schoolYearId, month, weekId, semester };
   
   if (type === 'bc' && bcNumber) {
     const result = await reportsService.getBCReport(teacherId, schoolYearId, parseInt(bcNumber));
@@ -83,6 +83,13 @@ const exportReport = asyncHandler(async (req, res) => {
     }
     const schoolYearId = schoolYearDoc._id;
 
+    console.log('📅 Export Report:', {
+      schoolYear,
+      schoolYearId: schoolYearId.toString(),
+      type,
+      teacherCount: targetTeacherIds.length
+    });
+
     const options = { type };
     if (bcNumber) options.bcNumber = parseInt(bcNumber);
     if (weekId) options.weekId = weekId;
@@ -95,13 +102,14 @@ const exportReport = asyncHandler(async (req, res) => {
     }
     if (semester) options.semester = parseInt(semester);
 
-    const result = await reportsService.exportReport(targetTeacherIds, schoolYearId, options); // ✅ Truyền ObjectId
+    // ✅ Truyền schoolYearId (ObjectId) và schoolYear (string) để service xử lý
+    const result = await reportsService.exportReport(targetTeacherIds, schoolYearId, schoolYear, options);
 
     if (!result.success) {
       const statusCode = result.statusCode || 500;
       if (statusCode === 404) {
         return res.status(404).json(
-          notFoundResponse(`${result.message}\n\nChi tiết: teacherId=${targetTeacherIds.join(',')}, type=${type}, schoolYear=${schoolYear}`)
+          notFoundResponse(result.message)
         );
       }
       return res.status(statusCode).json(
@@ -124,13 +132,13 @@ const exportReport = asyncHandler(async (req, res) => {
     await result.data.workbook.xlsx.write(res);
     res.end();
   } catch (error) {
+    console.error('❌ Export error:', error);
     return res.status(500).json(
       serverErrorResponse("Lỗi xuất báo cáo: " + error.message)
     );
   }
 });
 
-// ✅ Fix các hàm export khác tương tự...
 const exportMonthReport = asyncHandler(async (req, res) => {
   const { teacherId, teacherIds, schoolYear, month, bcNumber } = req.query;
   
@@ -157,7 +165,7 @@ const exportMonthReport = asyncHandler(async (req, res) => {
   }
 
   const bc = bcNumber ? parseInt(bcNumber) : parseInt(month);
-  const result = await reportsService.exportBCReport(targetIds, schoolYearId, bc); // ✅ Truyền ObjectId
+  const result = await reportsService.exportBCReport(targetIds, schoolYearId, schoolYear, bc);
 
   if (!result.success) {
     return res.status(result.statusCode || 500).json(
@@ -198,9 +206,9 @@ const exportWeekReport = asyncHandler(async (req, res) => {
   if (weekIds) {
     let weekIdArray;
     try { weekIdArray = JSON.parse(weekIds); } catch (e) { weekIdArray = [weekId]; }
-    result = await reportsService.exportWeekRangeReport(teacherId, weekIdArray, schoolYearId); // ✅ Truyền ObjectId
+    result = await reportsService.exportWeekRangeReport(teacherId, weekIdArray, schoolYearId, schoolYear);
   } else {
-    result = await reportsService.exportWeekReport(teacherId, weekId, schoolYearId); // ✅ Truyền ObjectId
+    result = await reportsService.exportWeekReport(teacherId, weekId, schoolYearId, schoolYear);
   }
 
   if (!result.success) {
@@ -231,7 +239,7 @@ const exportSemesterReport = asyncHandler(async (req, res) => {
   }
   const schoolYearId = schoolYearDoc._id;
 
-  const result = await reportsService.exportSemesterReport(teacherId, schoolYearId, parseInt(semester)); // ✅ Truyền ObjectId
+  const result = await reportsService.exportSemesterReport(teacherId, schoolYearId, schoolYear, parseInt(semester));
 
   if (!result.success) {
     return res.status(result.statusCode || 500).json(
@@ -262,8 +270,8 @@ const exportYearReport = asyncHandler(async (req, res) => {
   const schoolYearId = schoolYearDoc._id;
 
   const result = allBC === 'true' 
-    ? await reportsService.exportAllBCReport(teacherId, schoolYearId) // ✅ Truyền ObjectId
-    : await reportsService.exportYearReport(teacherId, schoolYearId); // ✅ Truyền ObjectId
+    ? await reportsService.exportAllBCReport(teacherId, schoolYearId, schoolYear)
+    : await reportsService.exportYearReport(teacherId, schoolYearId, schoolYear);
 
   if (!result.success) {
     return res.status(result.statusCode || 500).json(
