@@ -58,7 +58,8 @@ const groupRecordsByMonth = (records, weeks) => {
 const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, records, weeksInMonth, bcNumber, schoolYearLabel) => {
   // use the same implementation you already have
   const worksheet = workbook.addWorksheet(sheetName.substring(0, 31));
-  
+
+  worksheet.views = [{ showGridLines: false }];
   worksheet.columns = [
     { width: 5 },
     { width: 14 },
