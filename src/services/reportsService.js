@@ -1,9 +1,13 @@
+const mongoose = require("mongoose");
 const TeachingRecords = require("../models/teachingRecordsModel");
 const Teacher = require("../models/teacherModel");
 const Week = require("../models/weekModel");
 const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
+const SchoolYear = require("../models/schoolYearModel"); // new: model for school years
 const ExcelJS = require("exceljs");
+
+const isValidObjectId = (id) => !!(id && mongoose.Types.ObjectId.isValid(id));
 
 const getMonthFromWeek = (week) => {
   if (!week || !week.startDate) return 9;
@@ -11,9 +15,14 @@ const getMonthFromWeek = (week) => {
   return startDate.getMonth() + 1;
 };
 
-const getWeeksInMonth = async (month, schoolYear) => {
+const getWeeksInMonth = async (month, schoolYearLabel) => {
+  // schoolYearLabel expected like "2024-2025"
   const allWeeks = await Week.find({}).sort({ weekNumber: 1 });
-  const [startYear, endYear] = schoolYear.split('-').map(Number);
+  if (!schoolYearLabel) {
+    // fallback: return weeks that have the same month (best-effort)
+    return allWeeks.filter(w => getMonthFromWeek(w) === month);
+  }
+  const [startYear, endYear] = schoolYearLabel.split('-').map(Number);
   const year = month >= 9 ? startYear : endYear;
   
   return allWeeks.filter(week => {
@@ -45,9 +54,9 @@ const groupRecordsByMonth = (records, weeks) => {
   return groups;
 };
 
-// Cập nhật hàm createBCSheet trong src/services/reportsService.js
-
-const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, records, weeksInMonth, bcNumber, schoolYear) => {
+// createBCSheet unchanged (keeps same interface)
+const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, records, weeksInMonth, bcNumber, schoolYearLabel) => {
+  // use the same implementation you already have
   const worksheet = workbook.addWorksheet(sheetName.substring(0, 31));
   
   worksheet.columns = [
@@ -74,7 +83,7 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
   worksheet.getCell('A2').fill = { type: 'pattern', pattern: 'none' };
 
   worksheet.mergeCells('A4:L4');
-  worksheet.getCell('A4').value = `BẢNG KÊ GIỜ THÁNG ${String(bcNumber).padStart(2, '0')} NĂM HỌC ${schoolYear} (BIÊN CHẾ)`;
+  worksheet.getCell('A4').value = `BẢNG KÊ GIỜ THÁNG ${String(bcNumber).padStart(2, '0')} NĂM HỌC ${schoolYearLabel || ''} (BIÊN CHẾ)`;
   worksheet.getCell('A4').font = { size: 14, bold: true };
   worksheet.getCell('A4').alignment = { horizontal: 'center', vertical: 'middle' };
   worksheet.getCell('A4').fill = { type: 'pattern', pattern: 'none' };
@@ -334,173 +343,265 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
   worksheet.getRow(14).height = 50;
 };
 
-const exportReport = async (teacherIds, schoolYear, options = {}) => {
+const exportReport = async (teacherIds, schoolYearId, options = {}) => {
   try {
+    console.log("[exportReport] called with:", { teacherIds, schoolYearId, options: { ...options } });
     const { type = 'bc', bcNumber, weekId, weekIds, semester } = options;
     const teacherIdArray = Array.isArray(teacherIds) ? teacherIds : [teacherIds];
 
+    console.log("[exportReport] teacherIdArray length:", teacherIdArray.length);
+
     const allWeeks = await Week.find({}).sort({ weekNumber: 1 });
-    
+
+    // resolve schoolYearId -> schoolYearLabel
+    let schoolYearLabel = null;
+    let resolvedSchoolYearId = schoolYearId;
+    if (schoolYearId) {
+      try {
+        if (!isValidObjectId(schoolYearId)) {
+          console.warn("[exportReport] schoolYearId provided but not a valid ObjectId:", schoolYearId);
+          return { success: false, statusCode: 400, message: "schoolYearId không hợp lệ" };
+        }
+        const sy = await SchoolYear.findById(schoolYearId);
+        if (!sy) {
+          console.warn("[exportReport] SchoolYear not found for id:", schoolYearId);
+          return { success: false, statusCode: 404, message: "Không tìm thấy năm học (schoolYearId)" };
+        }
+        schoolYearLabel = sy.year || sy.label || (sy.startYear && sy.endYear ? `${sy.startYear}-${sy.endYear}` : String(sy._id));
+        resolvedSchoolYearId = sy._id;
+        console.log("[exportReport] resolved schoolYearLabel:", schoolYearLabel);
+      } catch (e) {
+        console.error("[exportReport] Error resolving SchoolYear:", e && (e.stack || e));
+        return { success: false, statusCode: 500, message: "Lỗi khi truy vấn SchoolYear: " + (e.message || e) };
+      }
+    }
+
     const workbook = new ExcelJS.Workbook();
     let sheetCount = 0;
 
     for (const teacherId of teacherIdArray) {
-      const teacher = await Teacher.findById(teacherId)
-        .populate('subjectIds', 'name')
-        .populate('mainClassId', 'name grade');
-      
-      if (!teacher) {
-        continue;
-      }
+      try {
+        console.log("[exportReport] processing teacherId:", teacherId);
+        const teacher = await Teacher.findById(teacherId)
+          .populate('subjectIds', 'name')
+          .populate('mainClassId', 'name grade');
+        
+        if (!teacher) {
+          console.warn("[exportReport] teacher not found, skipping:", teacherId);
+          continue;
+        }
 
-      let query = { teacherId: teacherId, schoolYear: schoolYear };
-      
-      if (type === 'week' && weekId) {
-        query.weekId = weekId;
-      } else if (type === 'week' && weekIds && weekIds.length > 0) {
-        query.weekId = { $in: weekIds };
-      } else if (type === 'semester' && semester) {
-        const semesterWeeks = allWeeks.filter(w => {
-          const wn = w.weekNumber || 0;
-          return semester === 1 ? (wn >= 1 && wn <= 18) : (wn >= 19 && wn <= 35);
-        });
-        query.weekId = { $in: semesterWeeks.map(w => w._id) };
-      }
+        let query = { teacherId: teacherId };
+        if (resolvedSchoolYearId) query.schoolYearId = resolvedSchoolYearId;
+        
+        if (type === 'week' && weekId) {
+          query.weekId = weekId;
+        } else if (type === 'week' && weekIds && weekIds.length > 0) {
+          query.weekId = { $in: weekIds };
+        } else if (type === 'semester' && semester) {
+          const semesterWeeks = allWeeks.filter(w => {
+            const wn = w.weekNumber || 0;
+            return semester === 1 ? (wn >= 1 && wn <= 18) : (wn >= 19 && wn <= 35);
+          });
+          query.weekId = { $in: semesterWeeks.map(w => w._id) };
+        }
 
-      const records = await TeachingRecords.find(query)
-        .populate("weekId", "weekNumber startDate endDate")
-        .populate("subjectId", "name")
-        .populate("classId", "name grade")
-        .sort({ "weekId.weekNumber": 1 });
+        console.log("[exportReport] TeachingRecords query for teacher:", teacherId, query);
 
-      if (records.length === 0) {
-        continue;
-      }
+        const records = await TeachingRecords.find(query)
+          .populate("weekId", "weekNumber startDate endDate")
+          .populate("subjectId", "name")
+          .populate("classId", "name grade")
+          .sort({ "weekId.weekNumber": 1 });
 
-      const monthGroups = groupRecordsByMonth(records, allWeeks);
-      
-      let monthsToExport = Object.keys(monthGroups).map(Number);
-      
-      if (bcNumber) {
-        monthsToExport = monthsToExport.filter(m => m === bcNumber);
-      }
+        console.log(`[exportReport] found ${records.length} records for teacher ${teacherId}`);
 
-      for (const month of monthsToExport.sort((a, b) => {
-        const orderA = a >= 9 ? a - 9 : a + 3;
-        const orderB = b >= 9 ? b - 9 : b + 3;
-        return orderA - orderB;
-      })) {
-        const monthData = monthGroups[month];
-        if (!monthData || monthData.records.length === 0) continue;
+        if (records.length === 0) {
+          continue;
+        }
 
-        const weeksInMonth = await getWeeksInMonth(month, schoolYear);
+        const monthGroups = groupRecordsByMonth(records, allWeeks);
+        
+        let monthsToExport = Object.keys(monthGroups).map(Number);
+        
+        if (bcNumber) {
+          monthsToExport = monthsToExport.filter(m => m === bcNumber);
+        }
 
-        const teacherShortName = teacher.name.split(' ').pop();
-        const sheetName = teacherIdArray.length > 1 
-          ? `BC${month}_${teacherShortName}`
-          : `BC ${month}`;
+        for (const month of monthsToExport.sort((a, b) => {
+          const orderA = a >= 9 ? a - 9 : a + 3;
+          const orderB = b >= 9 ? b - 9 : b + 3;
+          return orderA - orderB;
+        })) {
+          const monthData = monthGroups[month];
+          if (!monthData || monthData.records.length === 0) continue;
 
-        await createBCSheet(
-          workbook,
-          sheetName,
-          teacher,
-          teacher.subjectIds?.[0] || null,
-          teacher.mainClassId,
-          monthData.records,
-          weeksInMonth,
-          month,
-          schoolYear
-        );
-        sheetCount++;
+          // weeksInMonth needs a schoolYearLabel to correctly pick weeks that fall in the calendar year
+          const weeksInMonth = await getWeeksInMonth(month, schoolYearLabel);
+
+          const teacherShortName = teacher.name.split(' ').pop();
+          const sheetName = teacherIdArray.length > 1 
+            ? `BC${month}_${teacherShortName}`
+            : `BC ${month}`;
+
+          await createBCSheet(
+            workbook,
+            sheetName,
+            teacher,
+            teacher.subjectIds?.[0] || null,
+            teacher.mainClassId,
+            monthData.records,
+            weeksInMonth,
+            month,
+            schoolYearLabel
+          );
+          sheetCount++;
+        }
+      } catch (innerErr) {
+        // log and continue with next teacher
+        console.error("[exportReport] error processing teacherId:", teacherId, innerErr && (innerErr.stack || innerErr));
+        // do not abort whole export because one teacher failed
       }
     }
 
     if (sheetCount === 0) {
+      console.warn("[exportReport] sheetCount === 0; no data found for provided inputs", { schoolYearLabel, schoolYearId });
       return { 
         success: false, 
         statusCode: 404, 
-        message: `Không tìm thấy dữ liệu giảng dạy cho năm học ${schoolYear}.\n\nGiáo viên chưa nhập tiết dạy hoặc dữ liệu thuộc năm học khác.` 
+        message: `Không tìm thấy dữ liệu giảng dạy cho năm học ${schoolYearLabel || schoolYearId}.\n\nGiáo viên chưa nhập tiết dạy hoặc dữ liệu thuộc năm học khác.` 
       };
     }
 
-    return { success: true, data: { workbook, sheetCount } };
+    console.log("[exportReport] finished, sheetCount:", sheetCount);
+    return { success: true, data: { workbook, sheetCount, schoolYearLabel, fileName: `BaoCao_${schoolYearLabel || 'report'}.xlsx` } };
   } catch (error) {
+    console.error("[exportReport] unexpected error:", error && (error.stack || error));
     return { 
       success: false, 
       statusCode: 500, 
-      message: "Lỗi hệ thống khi xuất báo cáo. Vui lòng thử lại sau!" 
+      message: "Lỗi hệ thống khi xuất báo cáo. Vui lòng thử lại sau! " + (error.message || '') 
     };
   }
 };
 
-const exportBCReport = async (teacherIds, schoolYear, bcNumber) => {
-  return await exportReport(teacherIds, schoolYear, { type: 'bc', bcNumber });
+const exportBCReport = async (teacherIds, schoolYearId, bcNumber) => {
+  return await exportReport(teacherIds, schoolYearId, { type: 'bc', bcNumber });
 };
 
-const exportMonthReport = async (teacherId, schoolYear, month, bcNumber = null) => {
-  const bc = bcNumber || month;
-  return await exportReport(teacherId, schoolYear, { type: 'bc', bcNumber: bc });
+const exportMonthReport = async (teacherId, schoolYearId, month, bcNumber = null) => {
+  const bc = bcNumber || month; 
+  return await exportReport(teacherId, schoolYearId, { type: 'bc', bcNumber: bc });
 };
 
-const exportWeekReport = async (teacherId, weekId, schoolYear) => {
-  const week = await Week.findById(weekId);
-  if (!week) return { success: false, statusCode: 404, message: "Không tìm thấy tuần học" };
-  
-  if (!schoolYear) {
-    const weekDate = new Date(week.startDate);
-    const year = weekDate.getFullYear();
-    const month = weekDate.getMonth() + 1;
-    schoolYear = month >= 9 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-  }
-  
-  return await exportReport(teacherId, schoolYear, { type: 'week', weekId });
-};
-
-const exportWeekRangeReport = async (teacherId, weekIds, schoolYear) => {
-  if (!weekIds || weekIds.length === 0) {
-    return { success: false, statusCode: 400, message: "Phải cung cấp weekIds" };
-  }
-  
-  const week = await Week.findById(weekIds[0]);
-  if (!week) return { success: false, statusCode: 404, message: "Không tìm thấy tuần học" };
-  
-  if (!schoolYear) {
-    const weekDate = new Date(week.startDate);
-    const year = weekDate.getFullYear();
-    const month = weekDate.getMonth() + 1;
-    schoolYear = month >= 9 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-  }
-  
-  return await exportReport(teacherId, schoolYear, { type: 'week', weekIds });
-};
-
-const exportSemesterReport = async (teacherId, schoolYear, semester) => {
-  return await exportReport(teacherId, schoolYear, { type: 'semester', semester });
-};
-
-const exportYearReport = async (teacherId, schoolYear) => {
-  return await exportReport(teacherId, schoolYear, { type: 'year' });
-};
-
-const exportAllBCReport = async (teacherId, schoolYear) => {
-  return await exportReport(teacherId, schoolYear, { type: 'year' });
-};
-
-const getBCReport = async (teacherId, schoolYear, bcNumber) => {
+const exportWeekReport = async (teacherId, weekId, schoolYearId) => {
   try {
-    const teacher = await Teacher.findById(teacherId);
-    if (!teacher) return { success: false, statusCode: 404, message: "Không tìm thấy giáo viên" };
+    console.log("[exportWeekReport] called:", { teacherId, weekId, schoolYearId });
+    const week = await Week.findById(weekId);
+    if (!week) {
+      console.warn("[exportWeekReport] week not found:", weekId);
+      return { success: false, statusCode: 404, message: "Không tìm thấy tuần học" };
+    }
+    
+    let resolvedSchoolYearId = schoolYearId;
+    if (!schoolYearId) {
+      // infer schoolYear from week date and try to find SchoolYear document
+      const weekDate = new Date(week.startDate);
+      const year = weekDate.getFullYear();
+      const month = weekDate.getMonth() + 1;
+      const schoolYearStr = month >= 9 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+      const sy = await SchoolYear.findOne({ year: schoolYearStr });
+      if (sy) resolvedSchoolYearId = sy._id;
+      console.log("[exportWeekReport] inferred schoolYearStr:", schoolYearStr, "resolvedSchoolYearId:", resolvedSchoolYearId);
+    }
+    
+    return await exportReport(teacherId, resolvedSchoolYearId, { type: 'week', weekId });
+  } catch (error) {
+    console.error("[exportWeekReport] error:", error && (error.stack || error));
+    return { success: false, statusCode: 500, message: "Lỗi khi xuất báo cáo tuần: " + (error.message || '') };
+  }
+};
 
-    const records = await TeachingRecords.find({ teacherId, schoolYear })
+const exportWeekRangeReport = async (teacherId, weekIds, schoolYearId) => {
+  try {
+    console.log("[exportWeekRangeReport] called:", { teacherId, weekIds, schoolYearId });
+    if (!weekIds || weekIds.length === 0) {
+      return { success: false, statusCode: 400, message: "Phải cung cấp weekIds" };
+    }
+    
+    const week = await Week.findById(weekIds[0]);
+    if (!week) {
+      console.warn("[exportWeekRangeReport] week not found:", weekIds[0]);
+      return { success: false, statusCode: 404, message: "Không tìm thấy tuần học" };
+    }
+    
+    let resolvedSchoolYearId = schoolYearId;
+    if (!schoolYearId) {
+      const weekDate = new Date(week.startDate);
+      const year = weekDate.getFullYear();
+      const month = weekDate.getMonth() + 1;
+      const schoolYearStr = month >= 9 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+      const sy = await SchoolYear.findOne({ year: schoolYearStr });
+      if (sy) resolvedSchoolYearId = sy._id;
+      console.log("[exportWeekRangeReport] inferred schoolYearStr:", schoolYearStr, "resolvedSchoolYearId:", resolvedSchoolYearId);
+    }
+    
+    return await exportReport(teacherId, resolvedSchoolYearId, { type: 'week', weekIds });
+  } catch (error) {
+    console.error("[exportWeekRangeReport] error:", error && (error.stack || error));
+    return { success: false, statusCode: 500, message: "Lỗi khi xuất báo cáo nhiều tuần: " + (error.message || '') };
+  }
+};
+
+const exportSemesterReport = async (teacherId, schoolYearId, semester) => {
+  try {
+    console.log("[exportSemesterReport] called:", { teacherId, schoolYearId, semester });
+    return await exportReport(teacherId, schoolYearId, { type: 'semester', semester });
+  } catch (error) {
+    console.error("[exportSemesterReport] error:", error && (error.stack || error));
+    return { success: false, statusCode: 500, message: "Lỗi khi xuất báo cáo học kỳ: " + (error.message || '') };
+  }
+};
+
+const exportYearReport = async (teacherId, schoolYearId) => {
+  try {
+    console.log("[exportYearReport] called:", { teacherId, schoolYearId });
+    return await exportReport(teacherId, schoolYearId, { type: 'year' });
+  } catch (error) {
+    console.error("[exportYearReport] error:", error && (error.stack || error));
+    return { success: false, statusCode: 500, message: "Lỗi khi xuất báo cáo năm: " + (error.message || '') };
+  }
+};
+
+const exportAllBCReport = async (teacherId, schoolYearId) => {
+  return await exportReport(teacherId, schoolYearId, { type: 'year' });
+};
+
+const getBCReport = async (teacherId, schoolYearId, bcNumber) => {
+  try {
+    console.log("[getBCReport] called:", { teacherId, schoolYearId, bcNumber });
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) {
+      console.warn("[getBCReport] teacher not found:", teacherId);
+      return { success: false, statusCode: 404, message: "Không tìm thấy giáo viên" };
+    }
+
+    const query = { teacherId };
+    if (schoolYearId) query.schoolYearId = schoolYearId;
+
+    console.log("[getBCReport] query:", query);
+    const records = await TeachingRecords.find(query)
       .populate("weekId", "weekNumber startDate endDate")
       .populate("subjectId", "name")
       .populate("classId", "name grade");
+
+    console.log("[getBCReport] records length:", records.length);
 
     if (records.length === 0) {
       return { 
         success: false, 
         statusCode: 404, 
-        message: `Không có dữ liệu giảng dạy cho năm học ${schoolYear}` 
+        message: `Không có dữ liệu giảng dạy cho năm học ${schoolYearId || ''}` 
       };
     }
 
@@ -508,37 +609,45 @@ const getBCReport = async (teacherId, schoolYear, bcNumber) => {
       success: true,
       data: {
         teacher: { id: teacher._id, name: teacher.name },
-        schoolYear,
+        schoolYearId,
         bcNumber,
         records,
         totalPeriods: records.reduce((sum, r) => sum + (r.periods || 0), 0),
       },
     };
   } catch (error) {
-    return { success: false, statusCode: 500, message: "Lỗi hệ thống: " + error.message };
+    console.error("[getBCReport] error:", error && (error.stack || error));
+    return { success: false, statusCode: 500, message: "Lỗi hệ thống: " + (error.message || '') };
   }
 };
 
 const getTeacherReport = async (teacherId, type, filters = {}) => {
   try {
+    console.log("[getTeacherReport] called:", { teacherId, type, filters });
     const teacher = await Teacher.findById(teacherId);
-    if (!teacher) return { success: false, statusCode: 404, message: "Không tìm thấy giáo viên" };
+    if (!teacher) {
+      console.warn("[getTeacherReport] teacher not found:", teacherId);
+      return { success: false, statusCode: 404, message: "Không tìm thấy giáo viên" };
+    }
 
     let query = { teacherId };
-    if (filters.schoolYear) query.schoolYear = filters.schoolYear;
+    if (filters.schoolYearId) query.schoolYearId = filters.schoolYearId;
 
+    console.log("[getTeacherReport] query:", query);
     const records = await TeachingRecords.find(query)
       .populate("weekId", "weekNumber startDate endDate")
       .populate("subjectId", "name")
       .populate("classId", "name grade")
       .sort({ "weekId.weekNumber": 1 });
 
+    console.log("[getTeacherReport] records length:", records.length);
+
     if (records.length === 0) {
       return { 
         success: false, 
         statusCode: 404, 
-        message: filters.schoolYear 
-          ? `Không có dữ liệu giảng dạy cho năm học ${filters.schoolYear}` 
+        message: filters.schoolYearId 
+          ? `Không có dữ liệu giảng dạy cho năm học (schoolYearId=${filters.schoolYearId})` 
           : "Không có dữ liệu giảng dạy" 
       };
     }
@@ -557,7 +666,8 @@ const getTeacherReport = async (teacherId, type, filters = {}) => {
       },
     };
   } catch (error) {
-    return { success: false, statusCode: 500, message: "Lỗi hệ thống: " + error.message };
+    console.error("[getTeacherReport] error:", error && (error.stack || error));
+    return { success: false, statusCode: 500, message: "Lỗi hệ thống: " + (error.message || '') };
   }
 };
 
