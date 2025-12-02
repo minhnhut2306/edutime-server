@@ -1,11 +1,11 @@
+// src/services/teacherService.js - UPDATED VERSION
 const Teacher = require("../models/teacherModel");
 const User = require("../models/userModel");
 const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
-const SchoolYear = require("../models/schoolYearModel"); // ✅ FIX: Đổi từ schoolYearIdModel
+const SchoolYear = require("../models/schoolYearModel");
 const XLSX = require("xlsx");
 
-// ✅ FIX: Đổi tên hàm và model
 const getActiveSchoolYearId = async () => {
   const activeYear = await SchoolYear.findOne({ status: "active" });
   if (!activeYear) {
@@ -15,9 +15,6 @@ const getActiveSchoolYearId = async () => {
   }
   return activeYear._id;
 };
-
-// ✅ FIX: Đổi tất cả schoolYearIdId thành schoolYearId
-// ✅ FIX: src/services/teacherService.js - Hàm getTeachers
 
 const getTeachers = async (filters = {}) => {
   let schoolYearId;
@@ -31,15 +28,7 @@ const getTeachers = async (filters = {}) => {
     schoolYearId = await getActiveSchoolYearId();
   }
 
-  console.log("🔍 Backend query:", { schoolYearId, filters });
-
-  // ✅ FIX: Không filter theo status nữa, lấy tất cả giáo viên của năm học
-  const query = {
-    schoolYearId,
-    // ❌ REMOVED: status: "active"
-  };
-
-  console.log("🔍 Backend filtering teachers:", query);
+  const query = { schoolYearId };
 
   if (filters.name) {
     query.name = { $regex: filters.name, $options: "i" };
@@ -63,11 +52,6 @@ const getTeachers = async (filters = {}) => {
     .populate("mainClassId", "name grade")
     .sort({ createdAt: -1 });
 
-  console.log(
-    `✅ Found ${teachers.length} teachers for schoolYearId:`,
-    schoolYearId
-  );
-
   return teachers;
 };
 
@@ -84,6 +68,7 @@ const getTeacherById = async (id) => {
   return teacher;
 };
 
+// ✅ FIX: Kiểm tra lớp chủ nhiệm đã có giáo viên khác chưa
 const createTeacher = async (data) => {
   const { name, phone, userId, subjectIds, mainClassId } = data;
   const schoolYearId = await getActiveSchoolYearId();
@@ -98,7 +83,7 @@ const createTeacher = async (data) => {
     checks.push(
       Teacher.findOne({ phone, schoolYearId }).then((existing) => {
         if (existing)
-          throw new Error("Phone number already exists in this school year");
+          throw new Error("Số điện thoại đã tồn tại trong năm học này");
       })
     );
   }
@@ -107,13 +92,26 @@ const createTeacher = async (data) => {
     checks.push(
       Teacher.findOne({ userId }).then((existing) => {
         if (existing)
-          throw new Error("User already assigned to another teacher");
+          throw new Error("User đã được gán cho giáo viên khác");
       }),
       User.findById(userId).then((user) => {
-        if (!user) throw new Error("User not found");
+        if (!user) throw new Error("User không tồn tại");
       })
     );
   }
+
+  // ✅ KIỂM TRA LỚP CHỦ NHIỆM ĐÃ CÓ GIÁO VIÊN KHÁC CHƯA
+  checks.push(
+    Teacher.findOne({ mainClassId, schoolYearId }).then((existing) => {
+      if (existing) {
+        Class.findById(mainClassId).then((cls) => {
+          throw new Error(
+            `Lớp ${cls?.name || mainClassId} đã có giáo viên chủ nhiệm là "${existing.name}". Mỗi lớp chỉ có 1 giáo viên chủ nhiệm!`
+          );
+        });
+      }
+    })
+  );
 
   if (checks.length > 0) {
     await Promise.all(checks);
@@ -136,6 +134,7 @@ const createTeacher = async (data) => {
   ]);
 };
 
+// ✅ FIX: Kiểm tra lớp chủ nhiệm khi cập nhật
 const updateTeacher = async (id, data) => {
   const teacher = await Teacher.findById(id);
   if (!teacher) {
@@ -151,7 +150,7 @@ const updateTeacher = async (id, data) => {
         schoolYearId: teacher.schoolYearId,
       }).then((existing) => {
         if (existing && existing._id.toString() !== id) {
-          throw new Error("Phone number already exists");
+          throw new Error("Số điện thoại đã tồn tại");
         }
       })
     );
@@ -161,11 +160,29 @@ const updateTeacher = async (id, data) => {
     checks.push(
       Teacher.findOne({ userId: data.userId }).then((existing) => {
         if (existing && existing._id.toString() !== id) {
-          throw new Error("User already assigned to another teacher");
+          throw new Error("User đã được gán cho giáo viên khác");
         }
       }),
       User.findById(data.userId).then((user) => {
-        if (!user) throw new Error("User not found");
+        if (!user) throw new Error("User không tồn tại");
+      })
+    );
+  }
+
+  // ✅ KIỂM TRA LỚP CHỦ NHIỆM KHI CẬP NHẬT
+  if (data.mainClassId && data.mainClassId !== teacher.mainClassId?.toString()) {
+    checks.push(
+      Teacher.findOne({
+        mainClassId: data.mainClassId,
+        schoolYearId: teacher.schoolYearId,
+        _id: { $ne: id } // Loại trừ giáo viên hiện tại
+      }).then(async (existing) => {
+        if (existing) {
+          const cls = await Class.findById(data.mainClassId);
+          throw new Error(
+            `Lớp ${cls?.name || data.mainClassId} đã có giáo viên chủ nhiệm là "${existing.name}". Mỗi lớp chỉ có 1 giáo viên chủ nhiệm!`
+          );
+        }
       })
     );
   }
@@ -200,7 +217,7 @@ const updateTeacherUserId = async (teacherId, userId) => {
 
   const existingTeacher = await Teacher.findOne({ userId });
   if (existingTeacher && existingTeacher._id.toString() !== teacherId) {
-    throw new Error("User already assigned to another teacher");
+    throw new Error("User đã được gán cho giáo viên khác");
   }
 
   teacher.userId = userId;
@@ -280,6 +297,7 @@ const findClassFlexible = async (className, schoolYearId) => {
   return classInfo;
 };
 
+// ✅ FIX: Kiểm tra lớp chủ nhiệm khi import
 const importTeachers = async (file) => {
   if (!file) {
     throw new Error("No file uploaded");
@@ -300,6 +318,21 @@ const importTeachers = async (file) => {
     success: [],
     failed: [],
   };
+
+  // ✅ LẤY DANH SÁCH LỚP ĐÃ CÓ GIÁO VIÊN CHỦ NHIỆM
+  const existingHomerooms = await Teacher.find({ schoolYearId })
+    .populate('mainClassId', 'name')
+    .select('mainClassId name');
+  
+  const homeroomMap = new Map();
+  existingHomerooms.forEach(t => {
+    if (t.mainClassId && t.mainClassId._id) {
+      homeroomMap.set(
+        t.mainClassId._id.toString(), 
+        { teacherName: t.name, className: t.mainClassId.name }
+      );
+    }
+  });
 
   for (let i = 0; i < data.length; i++) {
     const row = data[i];
@@ -357,7 +390,6 @@ const importTeachers = async (file) => {
       }
 
       if (missingSubject) {
-        // ✅ FIX: Lấy year để hiển thị message
         const schoolYear = await SchoolYear.findById(schoolYearId);
         results.failed.push({
           row: rowNumber,
@@ -380,7 +412,6 @@ const importTeachers = async (file) => {
 
       const classInfo = await findClassFlexible(className, schoolYearId);
       if (!classInfo) {
-        // ✅ FIX: Lấy year để hiển thị message
         const schoolYear = await SchoolYear.findById(schoolYearId);
         results.failed.push({
           row: rowNumber,
@@ -392,6 +423,18 @@ const importTeachers = async (file) => {
         continue;
       }
 
+      // ✅ KIỂM TRA LỚP ĐÃ CÓ GIÁO VIÊN CHỦ NHIỆM CHƯA
+      const classIdStr = classInfo._id.toString();
+      if (homeroomMap.has(classIdStr)) {
+        const existing = homeroomMap.get(classIdStr);
+        results.failed.push({
+          row: rowNumber,
+          data: row,
+          reason: `Lớp "${existing.className}" đã có giáo viên chủ nhiệm là "${existing.teacherName}". Mỗi lớp chỉ có 1 giáo viên chủ nhiệm!`,
+        });
+        continue;
+      }
+
       const teacher = await Teacher.create({
         name: name.trim(),
         phone: phone || null,
@@ -399,6 +442,12 @@ const importTeachers = async (file) => {
         mainClassId: classInfo._id,
         schoolYearId,
         status: "active",
+      });
+
+      // ✅ THÊM VÀO MAP ĐỂ TRÁNH TRÙNG TRONG CÙNG FILE IMPORT
+      homeroomMap.set(classIdStr, { 
+        teacherName: teacher.name, 
+        className: classInfo.name 
       });
 
       const populatedTeacher = await Teacher.findById(teacher._id)

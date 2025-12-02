@@ -1,7 +1,25 @@
 const Class = require("../models/classesModel");
 const SchoolYear = require("../models/schoolYearModel");
 
-// ✅ FIX: Hàm này chỉ dùng cho CREATE, không dùng cho GET
+// ✅ Hàm chuẩn hóa tên lớp: 10A3, 10a3, 10 a3, 10 A3 → 10A3
+const normalizeClassName = (name) => {
+  if (!name) return null;
+  
+  // Loại bỏ khoảng trắng thừa và chuyển thành chữ hoa
+  let normalized = name.toString().trim().replace(/\s+/g, '').toUpperCase();
+  
+  // Tách số khối và tên lớp (VD: "10A3" → "10" + "A3")
+  const match = normalized.match(/^(\d{1,2})([A-Z]\d{0,2})$/);
+  
+  if (match) {
+    const grade = match[1];      // "10"
+    const className = match[2];  // "A3"
+    normalized = grade + className;
+  }
+  
+  return normalized;
+};
+
 const getActiveSchoolYearId = async () => {
   const activeYear = await SchoolYear.findOne({ status: 'active' });
   if (!activeYear) {
@@ -17,17 +35,18 @@ const extractGradeFromClassName = (className) => {
   return null;
 };
 
-// ✅ FIX: getClasses - nhận schoolYearId từ controller
+// ✅ GET classes
 const getClasses = async (filters = {}) => {
-  // ✅ Nếu không có schoolYearId từ query, mới lấy active
   const schoolYearId = filters.schoolYearId || await getActiveSchoolYearId();
   
   const query = {
     schoolYearId
   };
 
+  // ✅ Chuẩn hóa tên lớp khi search
   if (filters.name) {
-    query.name = { $regex: filters.name, $options: "i" };
+    const normalizedSearchName = normalizeClassName(filters.name);
+    query.name = { $regex: normalizedSearchName, $options: "i" };
   }
 
   if (filters.grade) {
@@ -52,6 +71,7 @@ const getClassById = async (id) => {
   return classInfo;
 };
 
+// ✅ CREATE class với chuẩn hóa tên
 const createClass = async (data) => {
   const { name, grade, studentCount } = data;
   const schoolYearId = await getActiveSchoolYearId();
@@ -60,15 +80,16 @@ const createClass = async (data) => {
     throw new Error("Class name is required");
   }
 
-  const trimmedName = name.toString().trim();
+  // ✅ Chuẩn hóa tên lớp: 10a3, 10 A3, 10 a3 → 10A3
+  const normalizedName = normalizeClassName(name);
 
-  if (!trimmedName) {
-    throw new Error("Class name cannot be empty");
+  if (!normalizedName) {
+    throw new Error("Class name cannot be empty after normalization");
   }
 
   let finalGrade = grade;
   if (!finalGrade) {
-    const extractedGrade = extractGradeFromClassName(trimmedName);
+    const extractedGrade = extractGradeFromClassName(normalizedName);
     if (extractedGrade) {
       finalGrade = extractedGrade;
     } else {
@@ -76,18 +97,20 @@ const createClass = async (data) => {
     }
   }
 
+  // ✅ Kiểm tra tên lớp đã tồn tại (sau khi chuẩn hóa)
   const existingClass = await Class.findOne({ 
-    name: trimmedName, 
+    name: normalizedName, 
     schoolYearId,
     status: 'active' 
   });
   
   if (existingClass) {
-    throw new Error("Class name already exists");
+    throw new Error(`Lớp "${normalizedName}" đã tồn tại trong năm học này`);
   }
 
+  // ✅ Lưu tên đã chuẩn hóa
   const classInfo = await Class.create({
-    name: trimmedName,
+    name: normalizedName,  // ← Lưu tên đã chuẩn hóa
     grade: finalGrade.toString().trim(),
     studentCount: studentCount ? parseInt(studentCount) : 0,
     schoolYearId,
@@ -97,6 +120,7 @@ const createClass = async (data) => {
   return classInfo;
 };
 
+// ✅ UPDATE class với chuẩn hóa tên
 const updateClass = async (id, data) => {
   if (!id) {
     throw new Error("Class ID is required");
@@ -108,26 +132,28 @@ const updateClass = async (id, data) => {
   }
 
   if (data.name) {
-    const trimmedName = data.name.toString().trim();
+    // ✅ Chuẩn hóa tên lớp
+    const normalizedName = normalizeClassName(data.name);
     
-    if (!trimmedName) {
-      throw new Error("Class name cannot be empty");
+    if (!normalizedName) {
+      throw new Error("Class name cannot be empty after normalization");
     }
 
-    if (trimmedName !== classInfo.name) {
+    if (normalizedName !== classInfo.name) {
       const existingClass = await Class.findOne({ 
-        name: trimmedName, 
+        name: normalizedName, 
         schoolYearId: classInfo.schoolYearId,
         status: 'active' 
       });
       
       if (existingClass) {
-        throw new Error("Class name already exists");
+        throw new Error(`Lớp "${normalizedName}" đã tồn tại trong năm học này`);
       }
-      data.name = trimmedName;
+      
+      data.name = normalizedName;  // ← Lưu tên đã chuẩn hóa
       
       if (!data.grade) {
-        const extractedGrade = extractGradeFromClassName(trimmedName);
+        const extractedGrade = extractGradeFromClassName(normalizedName);
         if (extractedGrade) {
           data.grade = extractedGrade;
         }
@@ -176,11 +202,13 @@ const getRowValue = (row, fieldName) => {
   return key ? row[key] : null;
 };
 
+// ✅ IMPORT classes với chuẩn hóa tên
 const importClasses = async (file) => {
   if (!file) {
     throw new Error("No file uploaded");
   }
 
+  const XLSX = require("xlsx");
   const schoolYearId = await getActiveSchoolYearId();
 
   const workbook = XLSX.read(file.buffer, { type: "buffer" });
@@ -215,33 +243,35 @@ const importClasses = async (file) => {
         continue;
       }
 
-      const trimmedName = name.toString().trim();
+      // ✅ Chuẩn hóa tên lớp
+      const normalizedName = normalizeClassName(name);
 
-      if (!trimmedName) {
+      if (!normalizedName) {
         results.failed.push({
           row: rowNumber,
           data: row,
-          reason: "Tên lớp không được để trống",
+          reason: "Tên lớp không hợp lệ sau khi chuẩn hóa",
         });
         continue;
       }
 
       if (!grade) {
-        const extractedGrade = extractGradeFromClassName(trimmedName);
+        const extractedGrade = extractGradeFromClassName(normalizedName);
         if (extractedGrade) {
           grade = extractedGrade;
         } else {
           results.failed.push({
             row: rowNumber,
             data: row,
-            reason: `Không thể xác định khối từ tên lớp "${trimmedName}". Vui lòng nhập khối hoặc đặt tên theo định dạng: 10A1, 11B2,...`,
+            reason: `Không thể xác định khối từ tên lớp "${normalizedName}". Vui lòng nhập khối hoặc đặt tên theo định dạng: 10A1, 11B2,...`,
           });
           continue;
         }
       }
 
+      // ✅ Kiểm tra trùng lặp với tên đã chuẩn hóa
       const existingClass = await Class.findOne({ 
-        name: trimmedName, 
+        name: normalizedName, 
         schoolYearId,
         status: 'active' 
       });
@@ -251,13 +281,13 @@ const importClasses = async (file) => {
         results.failed.push({
           row: rowNumber,
           data: row,
-          reason: `Tên lớp "${trimmedName}" đã tồn tại trong năm học ${schoolYear?.year || 'hiện tại'}`,
+          reason: `Tên lớp "${normalizedName}" đã tồn tại trong năm học ${schoolYear?.year || 'hiện tại'}`,
         });
         continue;
       }
 
       const classInfo = await Class.create({
-        name: trimmedName,
+        name: normalizedName,  // ← Lưu tên đã chuẩn hóa
         grade: grade.toString().trim(),
         studentCount: studentCount ? parseInt(studentCount) : 0,
         schoolYearId,
@@ -267,6 +297,8 @@ const importClasses = async (file) => {
       results.success.push({
         row: rowNumber,
         class: classInfo,
+        originalName: name,        // Tên gốc từ Excel
+        normalizedName: normalizedName  // Tên sau khi chuẩn hóa
       });
     } catch (error) {
       results.failed.push({
@@ -293,4 +325,5 @@ module.exports = {
   updateClass,
   deleteClass,
   importClasses,
+  normalizeClassName,  // Export để có thể dùng ở nơi khác nếu cần
 };

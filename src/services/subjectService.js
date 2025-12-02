@@ -9,7 +9,68 @@ const getActiveSchoolYearId = async () => {
   return activeYear._id;
 };
 
-// ✅ FIX: Nhận schoolYearId từ controller
+const removeVietnameseTones = (str) => {
+  if (!str) return "";
+  str = str.toLowerCase().trim();
+  str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+  str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+  str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+  str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+  str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+  str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+  str = str.replace(/đ/g, "d");
+  return str;
+};
+
+const SUBJECT_ALIASES = {
+  'toan': ['toan', 'toán', 'toán học', 'toan hoc'],
+  'van': ['van', 'văn', 'ngữ văn', 'ngu van', 'văn học', 'van hoc'],
+  'anh': ['anh', 'tiếng anh', 'tieng anh', 'english', 'anh văn', 'anh van', 't.anh', 'ta'],
+  'ly': ['ly', 'lý', 'vật lý', 'vat ly', 'v.lý', 'v.ly', 'vatly'],
+  'hoa': ['hoa', 'hóa', 'hóa học', 'hoa hoc', 'h.hóa', 'h.hoa', 'hoahoc'],
+  'sinh': ['sinh', 'sinh học', 'sinh hoc', 's.học', 's.hoc', 'sinhhoc'],
+  'su': ['su', 'sử', 'lịch sử', 'lich su', 'l.sử', 'l.su', 'lichsu'],
+  'dia': ['dia', 'địa', 'địa lý', 'dia ly', 'd.lý', 'd.ly', 'dialy', 'địa ly', 'dia lí', 'địa lí'],
+  'gdcd': ['gdcd', 'giáo dục công dân', 'giao duc cong dan', 'cd', 'cong dan', 'công dân'],
+  'tin': ['tin', 'tin học', 'tin hoc', 't.học', 't.hoc', 'cntt', 'công nghệ thông tin', 'cong nghe thong tin'],
+  'td': ['td', 'thể dục', 'the duc', 't.dục', 't.duc', 'tdtt', 'thể thao', 'the thao'],
+  'qp': ['qp', 'quốc phòng', 'quoc phong', 'an ninh', 'gdqp', 'giáo dục quốc phòng'],
+  'cong': ['cong', 'công nghệ', 'cong nghe', 'kỹ thuật', 'ky thuat', 'cn'],
+  'am': ['am', 'âm nhạc', 'am nhac', 'a.nhạc', 'a.nhac', 'nhạc', 'nhac'],
+  'my': ['my', 'mỹ thuật', 'my thuat', 'm.thuật', 'm.thuat', 'hội họa', 'hoi hoa']
+};
+
+const normalizeSubjectName = (name) => {
+  if (!name) return "";
+  const normalized = removeVietnameseTones(name);
+  
+  for (const [key, aliases] of Object.entries(SUBJECT_ALIASES)) {
+    for (const alias of aliases) {
+      const normalizedAlias = removeVietnameseTones(alias);
+      if (normalized === normalizedAlias) {
+        return key;
+      }
+    }
+  }
+  
+  return normalized;
+};
+
+const findSubjectByNameFlexible = async (subjectName, schoolYearId) => {
+  if (!subjectName) return null;
+
+  const allSubjects = await Subject.find({ schoolYearId, status: "active" });
+  
+  const inputNormalized = normalizeSubjectName(subjectName);
+  
+  const subject = allSubjects.find((s) => {
+    const dbNormalized = normalizeSubjectName(s.name);
+    return dbNormalized === inputNormalized;
+  });
+
+  return subject;
+};
+
 const getSubjects = async (filters = {}) => {
   const schoolYearId = filters.schoolYearId || await getActiveSchoolYearId();
   
@@ -33,14 +94,10 @@ const createSubject = async (data) => {
     throw new Error("Subject name is required");
   }
 
-  const existingSubject = await Subject.findOne({ 
-    name: { $regex: `^${name.trim()}$`, $options: "i" },
-    schoolYearId,
-    status: 'active'
-  });
+  const existingSubject = await findSubjectByNameFlexible(name.trim(), schoolYearId);
   
   if (existingSubject) {
-    throw new Error("Subject name already exists");
+    throw new Error(`Môn học đã tồn tại với tên "${existingSubject.name}"`);
   }
 
   const subject = await Subject.create({ 
@@ -70,4 +127,6 @@ module.exports = {
   getSubjects,
   createSubject,
   deleteSubject,
+  findSubjectByNameFlexible,
+  normalizeSubjectName,
 };
