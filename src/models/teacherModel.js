@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-
 const teacherSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -46,9 +45,9 @@ const teacherSchema = new mongoose.Schema({
   },
 });
 
-// ✅ Index tổng hợp để query hiệu quả
 teacherSchema.index({ userId: 1 }, { unique: true, sparse: true });
-teacherSchema.index({ phone: 1, schoolYearId: 1 }, { unique: true, sparse: true });
+// ✅ Phone unique TOÀN HỆ THỐNG (không phụ thuộc schoolYearId)
+teacherSchema.index({ phone: 1 }, { unique: true, sparse: true });
 teacherSchema.index({ schoolYearId: 1, status: 1 });
 
 module.exports = mongoose.model("Teacher", teacherSchema);
