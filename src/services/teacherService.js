@@ -1,9 +1,9 @@
-// src/services/teacherService.js - UPDATED VERSION
 const Teacher = require("../models/teacherModel");
 const User = require("../models/userModel");
 const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
 const SchoolYear = require("../models/schoolYearModel");
+const { findSubjectByNameFlexible } = require("./subjectService");
 const XLSX = require("xlsx");
 
 const getActiveSchoolYearId = async () => {
@@ -68,7 +68,6 @@ const getTeacherById = async (id) => {
   return teacher;
 };
 
-// ✅ FIX: Kiểm tra lớp chủ nhiệm đã có giáo viên khác chưa
 const createTeacher = async (data) => {
   const { name, phone, userId, subjectIds, mainClassId } = data;
   const schoolYearId = await getActiveSchoolYearId();
@@ -100,15 +99,13 @@ const createTeacher = async (data) => {
     );
   }
 
-  // ✅ KIỂM TRA LỚP CHỦ NHIỆM ĐÃ CÓ GIÁO VIÊN KHÁC CHƯA
   checks.push(
-    Teacher.findOne({ mainClassId, schoolYearId }).then((existing) => {
+    Teacher.findOne({ mainClassId, schoolYearId }).then(async (existing) => {
       if (existing) {
-        Class.findById(mainClassId).then((cls) => {
-          throw new Error(
-            `Lớp ${cls?.name || mainClassId} đã có giáo viên chủ nhiệm là "${existing.name}". Mỗi lớp chỉ có 1 giáo viên chủ nhiệm!`
-          );
-        });
+        const cls = await Class.findById(mainClassId);
+        throw new Error(
+          `Lớp ${cls?.name || mainClassId} đã có giáo viên chủ nhiệm là "${existing.name}". Mỗi lớp chỉ có 1 giáo viên chủ nhiệm!`
+        );
       }
     })
   );
@@ -134,7 +131,6 @@ const createTeacher = async (data) => {
   ]);
 };
 
-// ✅ FIX: Kiểm tra lớp chủ nhiệm khi cập nhật
 const updateTeacher = async (id, data) => {
   const teacher = await Teacher.findById(id);
   if (!teacher) {
@@ -169,13 +165,12 @@ const updateTeacher = async (id, data) => {
     );
   }
 
-  // ✅ KIỂM TRA LỚP CHỦ NHIỆM KHI CẬP NHẬT
   if (data.mainClassId && data.mainClassId !== teacher.mainClassId?.toString()) {
     checks.push(
       Teacher.findOne({
         mainClassId: data.mainClassId,
         schoolYearId: teacher.schoolYearId,
-        _id: { $ne: id } // Loại trừ giáo viên hiện tại
+        _id: { $ne: id }
       }).then(async (existing) => {
         if (existing) {
           const cls = await Class.findById(data.mainClassId);
@@ -267,21 +262,6 @@ const removeVietnameseTones = (str) => {
   return str;
 };
 
-const findSubjectFlexible = async (subjectName, schoolYearId) => {
-  if (!subjectName) return null;
-
-  const normalizedName = removeVietnameseTones(subjectName);
-
-  const allSubjects = await Subject.find({ schoolYearId, status: "active" });
-
-  const subject = allSubjects.find((s) => {
-    const dbName = removeVietnameseTones(s.name);
-    return dbName === normalizedName;
-  });
-
-  return subject;
-};
-
 const findClassFlexible = async (className, schoolYearId) => {
   if (!className) return null;
 
@@ -297,7 +277,6 @@ const findClassFlexible = async (className, schoolYearId) => {
   return classInfo;
 };
 
-// ✅ FIX: Kiểm tra lớp chủ nhiệm khi import
 const importTeachers = async (file) => {
   if (!file) {
     throw new Error("No file uploaded");
@@ -319,7 +298,6 @@ const importTeachers = async (file) => {
     failed: [],
   };
 
-  // ✅ LẤY DANH SÁCH LỚP ĐÃ CÓ GIÁO VIÊN CHỦ NHIỆM
   const existingHomerooms = await Teacher.find({ schoolYearId })
     .populate('mainClassId', 'name')
     .select('mainClassId name');
@@ -381,7 +359,7 @@ const importTeachers = async (file) => {
       let missingSubject = null;
 
       for (const subjectName of subjectNameList) {
-        const subject = await findSubjectFlexible(subjectName, schoolYearId);
+        const subject = await findSubjectByNameFlexible(subjectName, schoolYearId);
         if (!subject) {
           missingSubject = subjectName;
           break;
@@ -396,7 +374,7 @@ const importTeachers = async (file) => {
           data: row,
           reason: `Môn học "${missingSubject}" không tồn tại trong năm học ${
             schoolYear?.year || "hiện tại"
-          }`,
+          }. Các tên có thể dùng: Toán, Văn, Anh, Lý, Hóa, Sinh, Sử, Địa, Địa lý, GDCD, Tin, TD, QP, Công, Âm, Mỹ`,
         });
         continue;
       }
@@ -423,7 +401,6 @@ const importTeachers = async (file) => {
         continue;
       }
 
-      // ✅ KIỂM TRA LỚP ĐÃ CÓ GIÁO VIÊN CHỦ NHIỆM CHƯA
       const classIdStr = classInfo._id.toString();
       if (homeroomMap.has(classIdStr)) {
         const existing = homeroomMap.get(classIdStr);
@@ -444,7 +421,6 @@ const importTeachers = async (file) => {
         status: "active",
       });
 
-      // ✅ THÊM VÀO MAP ĐỂ TRÁNH TRÙNG TRONG CÙNG FILE IMPORT
       homeroomMap.set(classIdStr, { 
         teacherName: teacher.name, 
         className: classInfo.name 
