@@ -1,6 +1,6 @@
 function createResponse(code, msg, status, data = {}) {
     if (typeof code !== 'number' || isNaN(code)) {
-        code = 500; 
+        code = 500;
     }
     return { code, msg, status, data };
 }
@@ -33,11 +33,11 @@ const STATUS_CODES = {
     GATEWAY_TIMEOUT: 504
 };
 
-function successResponse(msg = 'Thành công', data = {}, code = 200) {
+function successResponse(msg = 'Thành công', data = {}, code = STATUS_CODES.OK) {
     return createResponse(code, msg, 'success', data);
 }
 
-function errorResponse(msg = 'Có lỗi xảy ra', code = 500, data = {}) {
+function errorResponse(msg = 'Có lỗi xảy ra', code = STATUS_CODES.INTERNAL_SERVER_ERROR, data = {}) {
     return createResponse(code, msg, 'error', data);
 }
 
