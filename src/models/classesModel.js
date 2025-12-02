@@ -35,7 +35,6 @@ const classesSchema = new mongoose.Schema({
   },
 });
 
-// ✅ Lớp phải unique trong cùng 1 năm học
 classesSchema.index({ name: 1, schoolYearId: 1 }, { unique: true });
 classesSchema.index({ schoolYearId: 1, status: 1 });
 

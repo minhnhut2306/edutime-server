@@ -1,22 +1,19 @@
 const classService = require("../services/classService");
 const asyncHandler = require("../middleware/asyncHandler");
-const SchoolYear = require("../models/schoolYearModel"); // ✅ THÊM
+const SchoolYear = require("../models/schoolYearModel");
 const {
   successResponse,
   createdResponse,
   badRequestResponse,
+  notFoundResponse
 } = require("../helper/createResponse.helper");
 
 const getClasses = asyncHandler(async (req, res) => {
-  // ✅ FIX: Convert schoolYear string sang schoolYearId
   let schoolYearId = null;
   if (req.query.schoolYear) {
     const schoolYear = await SchoolYear.findOne({ year: req.query.schoolYear });
     if (!schoolYear) {
-      return res.status(404).json({
-        code: 404,
-        msg: `Không tìm thấy năm học ${req.query.schoolYear}`
-      });
+      return res.status(404).json(notFoundResponse(`Không tìm thấy năm học ${req.query.schoolYear}`));
     }
     schoolYearId = schoolYear._id;
   }
@@ -24,17 +21,15 @@ const getClasses = asyncHandler(async (req, res) => {
   const filters = {
     name: req.query.name,
     grade: req.query.grade,
-    schoolYearId, // ✅ Truyền ObjectId thay vì string
+    schoolYearId
   };
 
   const classes = await classService.getClasses(filters);
 
-  res.json(
-    successResponse("Lấy danh sách lớp học thành công", {
-      classes,
-      total: classes.length,
-    })
-  );
+  res.json(successResponse("Lấy danh sách lớp học thành công", {
+    classes,
+    total: classes.length
+  }));
 });
 
 const getClassById = asyncHandler(async (req, res) => {
@@ -59,22 +54,16 @@ const deleteClass = asyncHandler(async (req, res) => {
 
 const importClasses = asyncHandler(async (req, res) => {
   if (!req.file) {
-    return res
-      .status(400)
-      .json(badRequestResponse("Vui lòng tải lên file Excel"));
+    return res.status(400).json(badRequestResponse("Vui lòng tải lên file Excel"));
   }
-
   const result = await classService.importClasses(req.file);
-
-  res.json(
-    successResponse("Import danh sách lớp học hoàn tất", {
-      total: result.total,
-      successCount: result.successCount,
-      failedCount: result.failedCount,
-      success: result.success,
-      failed: result.failed,
-    })
-  );
+  res.json(successResponse("Import danh sách lớp học hoàn tất", {
+    total: result.total,
+    successCount: result.successCount,
+    failedCount: result.failedCount,
+    success: result.success,
+    failed: result.failed
+  }));
 });
 
 module.exports = {
@@ -83,5 +72,5 @@ module.exports = {
   createClass,
   updateClass,
   deleteClass,
-  importClasses,
+  importClasses
 };
