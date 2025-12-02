@@ -1,4 +1,3 @@
-const mongoose = require("mongoose");
 const teacherService = require("../services/teacherService");
 const asyncHandler = require("../middleware/asyncHandler");
 const {
@@ -19,81 +18,83 @@ const getTeachers = asyncHandler(async (req, res) => {
 
   const teachers = await teacherService.getTeachers(filters);
 
-  return res.json(successResponse("Lấy danh sách giáo viên thành công", { teachers }));
+  return res.json(
+    successResponse("Lấy danh sách giáo viên thành công", { teachers })
+  );
 });
 
 const getTeacherById = asyncHandler(async (req, res) => {
   const { id } = req.params;
-
-  if (!id || !mongoose.Types.ObjectId.isValid(String(id))) {
-    return res.status(400).json(badRequestResponse("Vui lòng chọn giáo viên hợp lệ"));
-  }
-
   const teacher = await teacherService.getTeacherById(id);
 
-  return res.json(successResponse("Lấy thông tin giáo viên thành công", { teacher }));
+  return res.json(
+    successResponse("Lấy thông tin giáo viên thành công", { teacher })
+  );
 });
 
 const createTeacher = asyncHandler(async (req, res) => {
   const { name, subjectIds, mainClassId } = req.body;
 
-  if (!name || !Array.isArray(subjectIds) || subjectIds.length === 0 || !mainClassId) {
-    return res.status(400).json(badRequestResponse("Thiếu thông tin bắt buộc: tên, môn dạy hoặc lớp chủ nhiệm. Vui lòng kiểm tra lại."));
+  if (!name || !subjectIds || !mainClassId) {
+    return res
+      .status(400)
+      .json(
+        badRequestResponse(
+          "Thiếu thông tin bắt buộc: tên, môn học và lớp chủ nhiệm"
+        )
+      );
   }
 
   const teacher = await teacherService.createTeacher(req.body);
 
-  return res.status(201).json(createdResponse("Thêm giáo viên thành công", { teacher }));
+  return res
+    .status(201)
+    .json(createdResponse("Thêm giáo viên thành công", { teacher }));
 });
 
 const updateTeacher = asyncHandler(async (req, res) => {
   const { id } = req.params;
-
-  if (!id || !mongoose.Types.ObjectId.isValid(String(id))) {
-    return res.status(400).json(badRequestResponse("Vui lòng chọn giáo viên hợp lệ"));
-  }
-
   const teacher = await teacherService.updateTeacher(id, req.body);
 
-  return res.json(successResponse("Cập nhật giáo viên thành công", { teacher }));
+  return res.json(
+    successResponse("Cập nhật giáo viên thành công", { teacher })
+  );
 });
 
 const updateTeacherUserId = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
 
-  if (!id || !mongoose.Types.ObjectId.isValid(String(id))) {
-    return res.status(400).json(badRequestResponse("Vui lòng chọn giáo viên hợp lệ"));
-  }
-
-  if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
-    return res.status(400).json(badRequestResponse("Vui lòng chọn tài khoản người dùng hợp lệ để gán"));
+  if (!userId) {
+    return res.status(400).json(badRequestResponse("userId là bắt buộc"));
   }
 
   const teacher = await teacherService.updateTeacherUserId(id, userId);
 
-  return res.json(successResponse("Gán tài khoản người dùng cho giáo viên thành công", { teacher }));
+  return res.json(
+    successResponse("Gán user cho giáo viên thành công", { teacher })
+  );
 });
 
 const deleteTeacher = asyncHandler(async (req, res) => {
   const { id } = req.params;
-
-  if (!id || !mongoose.Types.ObjectId.isValid(String(id))) {
-    return res.status(400).json(badRequestResponse("Vui lòng chọn giáo viên hợp lệ"));
-  }
-
   const result = await teacherService.deleteTeacher(id);
 
   return res.json(successResponse("Xóa giáo viên thành công", result));
 });
 
 const importTeachers = asyncHandler(async (req, res) => {
+  console.log("req.file:", req.file);
+  console.log("req.body:", req.body); 
+
   if (!req.file) {
-    return res.status(400).json(badRequestResponse("Vui lòng tải lên file Excel chứa danh sách giáo viên"));
+    return res
+      .status(400)
+      .json(badRequestResponse("Vui lòng tải lên file Excel"));
   }
 
   const results = await teacherService.importTeachers(req.file);
-
+  console.log('Import results:', results)
   return res.json(successResponse("Import giáo viên hoàn tất", results));
 });
 

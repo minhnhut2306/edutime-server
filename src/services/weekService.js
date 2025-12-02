@@ -2,19 +2,23 @@ const Week = require("../models/weekModel");
 const SchoolYear = require("../models/schoolYearModel");
 
 const getActiveSchoolYearId = async () => {
-  const activeYear = await SchoolYear.findOne({ status: "active" });
+  const activeYear = await SchoolYear.findOne({ status: 'active' });
   if (!activeYear) {
-    throw new Error("Hiện chưa có năm học đang hoạt động. Vui lòng tạo hoặc chọn năm học.");
+    throw new Error('Không có năm học đang hoạt động. Vui lòng tạo năm học mới!');
   }
   return activeYear._id;
 };
 
+// ✅ FIX: Nhận schoolYearId từ controller
 const getWeeks = async (filters = {}) => {
-  const schoolYearId = filters.schoolYearId || (await getActiveSchoolYearId());
-  const query = { schoolYearId };
+  const schoolYearId = filters.schoolYearId || await getActiveSchoolYearId();
+  
+  const query = {
+    schoolYearId,
+  };
 
-  if (filters.weekNumber !== undefined) {
-    query.weekNumber = Number(filters.weekNumber);
+  if (filters.weekNumber) {
+    query.weekNumber = filters.weekNumber;
   }
 
   const weeks = await Week.find(query).sort({ weekNumber: 1 });
@@ -24,41 +28,44 @@ const getWeeks = async (filters = {}) => {
 const checkDateOverlap = async (startDate, endDate, schoolYearId, excludeId = null) => {
   const query = {
     schoolYearId,
-    status: "active",
+    status: 'active',
     $or: [
       { startDate: { $lte: startDate }, endDate: { $gte: startDate } },
       { startDate: { $lte: endDate }, endDate: { $gte: endDate } },
       { startDate: { $gte: startDate }, endDate: { $lte: endDate } }
     ]
   };
-  if (excludeId) query._id = { $ne: excludeId };
+
+  if (excludeId) {
+    query._id = { $ne: excludeId };
+  }
+
   return Week.findOne(query);
 };
 
 const createWeek = async (data) => {
-  const { startDate, endDate, schoolYearId: providedSchoolYearId } = data;
-  const schoolYearId = providedSchoolYearId || (await getActiveSchoolYearId());
+  const { startDate, endDate } = data;
+  const schoolYearId = await getActiveSchoolYearId();
 
   if (!startDate || !endDate) {
-    throw new Error("Vui lòng cung cấp cả ngày bắt đầu và ngày kết thúc");
+    throw new Error("Start date and end date are required");
   }
 
   const start = new Date(startDate);
   const end = new Date(endDate);
-  if (isNaN(start) || isNaN(end)) {
-    throw new Error("Ngày không hợp lệ. Vui lòng sử dụng định dạng ngày hợp lệ");
-  }
 
   if (end <= start) {
-    throw new Error("Ngày kết thúc phải sau ngày bắt đầu");
+    throw new Error("End date must be after start date");
   }
 
   const overlappingWeek = await checkDateOverlap(start, end, schoolYearId);
+
   if (overlappingWeek) {
-    throw new Error("Khoảng thời gian tuần học chồng lên tuần đã tồn tại. Vui lòng kiểm tra lại");
+    throw new Error("Week period overlaps with existing week");
   }
 
-  const lastWeek = await Week.findOne({ schoolYearId, status: "active" }).sort({ weekNumber: -1 });
+  const lastWeek = await Week.findOne({ schoolYearId, status: 'active' })
+    .sort({ weekNumber: -1 });
   const weekNumber = lastWeek ? lastWeek.weekNumber + 1 : 1;
 
   const week = await Week.create({
@@ -66,7 +73,7 @@ const createWeek = async (data) => {
     startDate: start,
     endDate: end,
     schoolYearId,
-    status: "active",
+    status: 'active'
   });
 
   return week;
@@ -75,60 +82,60 @@ const createWeek = async (data) => {
 const updateWeek = async (id, data) => {
   const week = await Week.findById(id);
   if (!week) {
-    const err = new Error("Không tìm thấy tuần học. Vui lòng kiểm tra lại");
-    err.statusCode = 404;
-    throw err;
+    throw new Error("Week not found");
   }
 
-  const start = data.startDate ? new Date(data.startDate) : week.startDate;
-  const end = data.endDate ? new Date(data.endDate) : week.endDate;
+  const { startDate, endDate } = data;
 
-  if (isNaN(new Date(start)) || isNaN(new Date(end))) {
-    const err = new Error("Ngày không hợp lệ. Vui lòng sử dụng định dạng ngày hợp lệ");
-    err.statusCode = 400;
-    throw err;
+  const checkStartDate = startDate ? new Date(startDate) : week.startDate;
+  const checkEndDate = endDate ? new Date(endDate) : week.endDate;
+
+  if (checkEndDate <= checkStartDate) {
+    throw new Error("End date must be after start date");
   }
 
-  if (end <= start) {
-    const err = new Error("Ngày kết thúc phải sau ngày bắt đầu");
-    err.statusCode = 400;
-    throw err;
-  }
+  const overlappingWeek = await checkDateOverlap(
+    checkStartDate, 
+    checkEndDate, 
+    week.schoolYearId,
+    id
+  );
 
-  const overlappingWeek = await checkDateOverlap(start, end, week.schoolYearId, id);
   if (overlappingWeek) {
-    const err = new Error("Khoảng thời gian tuần học chồng lên tuần đã tồn tại. Vui lòng kiểm tra lại");
-    err.statusCode = 400;
-    throw err;
+    throw new Error("Week period overlaps with existing week");
   }
 
   const updateData = {};
-  if (data.startDate) updateData.startDate = start;
-  if (data.endDate) updateData.endDate = end;
+  if (startDate) updateData.startDate = checkStartDate;
+  if (endDate) updateData.endDate = checkEndDate;
 
-  const updatedWeek = await Week.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
+  const updatedWeek = await Week.findByIdAndUpdate(
+    id,
+    updateData,
+    { new: true, runValidators: true }
+  );
+
   return updatedWeek;
 };
 
 const deleteWeek = async (id) => {
   const week = await Week.findByIdAndDelete(id);
+  
   if (!week) {
-    const err = new Error("Không tìm thấy tuần học. Vui lòng kiểm tra lại");
-    err.statusCode = 404;
-    throw err;
+    throw new Error("Week not found");
   }
 
   await Week.updateMany(
-    {
+    { 
       weekNumber: { $gt: week.weekNumber },
       schoolYearId: week.schoolYearId,
-      status: "active"
+      status: 'active'
     },
     { $inc: { weekNumber: -1 } }
   );
 
   return {
-    message: "Xóa tuần học thành công",
+    message: "Week deleted successfully",
     deletedWeek: {
       id: week._id,
       weekNumber: week.weekNumber,
