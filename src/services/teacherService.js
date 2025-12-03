@@ -51,6 +51,7 @@ const getRowValue = (row, fieldName) => {
 const normalizePhone = (phone) => {
   if (!phone) return null;
   const phoneStr = String(phone).trim();
+  if (phoneStr === '') return null;
   return phoneStr.length === 9 && !phoneStr.startsWith("0") ? "0" + phoneStr : phoneStr;
 };
 
@@ -63,15 +64,16 @@ const findClassFlexible = async (className, schoolYearId) => {
   return allClasses.find(c => removeVietnameseTones(c.name) === normalizedName);
 };
 
-const validateUniquePhone = async (phone, schoolYearId, excludeId = null) => {
-  if (!phone) return;
+const validateUniquePhone = async (phone, excludeId = null) => {
+  if (!phone || phone.trim() === '') return;
   
-  const query = { phone, schoolYearId };
+  const normalizedPhone = phone.trim();
+  const query = { phone: normalizedPhone };
   if (excludeId) query._id = { $ne: excludeId };
   
   const existing = await Teacher.findOne(query);
   if (existing) {
-    throw new Error("Số điện thoại đã tồn tại trong năm học này");
+    throw new Error(`Số điện thoại "${normalizedPhone}" đã được sử dụng bởi giáo viên ${existing.name}`);
   }
 };
 
@@ -87,24 +89,23 @@ const validateUniqueUserId = async (userId, excludeId = null) => {
   ]);
   
   if (existing) {
-    throw new Error("User đã được gán cho giáo viên khác");
+    throw new Error(`Tài khoản này đã được gán cho giáo viên ${existing.name}`);
   }
   if (!user) {
-    throw new Error("User không tồn tại");
+    throw new Error("Tài khoản không tồn tại trong hệ thống");
   }
 };
 
 const validateUniqueHomeroom = async (mainClassId, schoolYearId, excludeId = null) => {
-  if (!mainClassId) return;
+  if (!mainClassId || mainClassId.trim() === '') return;
   
   const query = { mainClassId, schoolYearId };
   if (excludeId) query._id = { $ne: excludeId };
   
-  const existing = await Teacher.findOne(query);
+  const existing = await Teacher.findOne(query).populate('mainClassId', 'name');
   if (existing) {
-    const cls = await Class.findById(mainClassId);
     throw new Error(
-      `Lớp ${cls?.name || mainClassId} đã có giáo viên chủ nhiệm là "${existing.name}". Mỗi lớp chỉ có 1 giáo viên chủ nhiệm`
+      `Lớp ${existing.mainClassId?.name || 'này'} đã có giáo viên chủ nhiệm là "${existing.name}". Mỗi lớp chỉ có 1 giáo viên chủ nhiệm`
     );
   }
 };
@@ -171,22 +172,25 @@ const createTeacher = async (data) => {
   const { name, phone, userId, subjectIds, mainClassId } = data;
   const schoolYearId = await getActiveSchoolYearId();
 
-  if (!name || !subjectIds || !mainClassId) {
-    throw new Error("Name, subjectIds và mainClassId là bắt buộc");
+  if (!name || !subjectIds) {
+    throw new Error("Họ tên và môn dạy là bắt buộc");
   }
 
+  const normalizedPhone = phone && phone.trim() !== '' ? phone.trim() : null;
+  const normalizedMainClassId = mainClassId && mainClassId.trim() !== '' ? mainClassId.trim() : null;
+
   await Promise.all([
-    validateUniquePhone(phone, schoolYearId),
+    validateUniquePhone(normalizedPhone),
     validateUniqueUserId(userId),
-    validateUniqueHomeroom(mainClassId, schoolYearId)
+    validateUniqueHomeroom(normalizedMainClassId, schoolYearId)
   ]);
 
   const teacher = await Teacher.create({
     name,
-    phone: phone || null,
+    phone: normalizedPhone,
     userId: userId || null,
     subjectIds,
-    mainClassId,
+    mainClassId: normalizedMainClassId,
     schoolYearId,
     status: "active"
   });
@@ -200,18 +204,31 @@ const updateTeacher = async (id, data) => {
     throw new Error("Không tìm thấy giáo viên");
   }
 
-  const checks = [];
-
-  if (data.phone && data.phone !== teacher.phone) {
-    checks.push(validateUniquePhone(data.phone, teacher.schoolYearId, id));
+  if (!data.name || data.name.trim() === '') {
+    throw new Error("Họ tên giáo viên không được để trống");
   }
 
-  if (data.userId) {
+  if (!data.subjectIds || data.subjectIds.length === 0) {
+    throw new Error("Phải chọn ít nhất một môn dạy");
+  }
+
+  const checks = [];
+
+  const normalizedPhone = data.phone && data.phone.trim() !== '' ? data.phone.trim() : null;
+  const currentPhone = teacher.phone;
+
+  if (normalizedPhone !== currentPhone) {
+    checks.push(validateUniquePhone(normalizedPhone, id));
+  }
+
+  if (data.userId && data.userId !== teacher.userId?.toString()) {
     checks.push(validateUniqueUserId(data.userId, id));
   }
 
-  if (data.mainClassId && data.mainClassId !== teacher.mainClassId?.toString()) {
-    checks.push(validateUniqueHomeroom(data.mainClassId, teacher.schoolYearId, id));
+  const normalizedMainClassId = data.mainClassId && data.mainClassId.trim() !== '' ? data.mainClassId.trim() : null;
+
+  if (normalizedMainClassId !== teacher.mainClassId?.toString()) {
+    checks.push(validateUniqueHomeroom(normalizedMainClassId, teacher.schoolYearId, id));
   }
 
   if (checks.length > 0) {
@@ -220,7 +237,7 @@ const updateTeacher = async (id, data) => {
 
   return await Teacher.findByIdAndUpdate(
     id,
-    { ...data, updatedAt: Date.now() },
+    { ...data, phone: normalizedPhone, mainClassId: normalizedMainClassId, updatedAt: Date.now() },
     { new: true, runValidators: true }
   ).populate(POPULATE_OPTIONS);
 };
@@ -306,9 +323,9 @@ const importTeachers = async (file) => {
       }
 
       if (phone) {
-        const existingTeacher = await Teacher.findOne({ phone, schoolYearId });
+        const existingTeacher = await Teacher.findOne({ phone });
         if (existingTeacher) {
-          throw new Error(`Số điện thoại ${phone} đã tồn tại trong năm học này`);
+          throw new Error(`Số điện thoại ${phone} đã được sử dụng bởi giáo viên ${existingTeacher.name}`);
         }
       }
 

@@ -32,11 +32,17 @@ const getTeacherById = asyncHandler(async (req, res) => {
 });
 
 const createTeacher = asyncHandler(async (req, res) => {
-  const { name, subjectIds, mainClassId } = req.body;
+  const { name, subjectIds } = req.body;
 
-  if (!name || !subjectIds || !mainClassId) {
+  if (!name || name.trim() === '') {
     return res.status(400).json(
-      badRequestResponse("Thiếu thông tin bắt buộc: tên, môn học và lớp chủ nhiệm")
+      badRequestResponse("Họ tên giáo viên không được để trống")
+    );
+  }
+
+  if (!subjectIds || subjectIds.length === 0) {
+    return res.status(400).json(
+      badRequestResponse("Vui lòng chọn ít nhất một môn học")
     );
   }
 
@@ -49,6 +55,19 @@ const createTeacher = asyncHandler(async (req, res) => {
 
 const updateTeacher = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  
+  if (req.body.name !== undefined && req.body.name.trim() === '') {
+    return res.status(400).json(
+      badRequestResponse("Họ tên giáo viên không được để trống")
+    );
+  }
+
+  if (req.body.subjectIds !== undefined && req.body.subjectIds.length === 0) {
+    return res.status(400).json(
+      badRequestResponse("Vui lòng chọn ít nhất một môn học")
+    );
+  }
+
   const teacher = await teacherService.updateTeacher(id, req.body);
 
   return res.json(
@@ -62,14 +81,14 @@ const updateTeacherUserId = asyncHandler(async (req, res) => {
 
   if (!userId) {
     return res.status(400).json(
-      badRequestResponse("userId là bắt buộc")
+      badRequestResponse("Vui lòng chọn tài khoản để gán")
     );
   }
 
   const teacher = await teacherService.updateTeacherUserId(id, userId);
 
   return res.json(
-    successResponse("Gán user cho giáo viên thành công", { teacher })
+    successResponse("Gán tài khoản cho giáo viên thành công", { teacher })
   );
 });
 

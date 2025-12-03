@@ -38,15 +38,27 @@ const asyncHandler = (fn) => (req, res, next) => {
 
     if (error.name === 'CastError') {
       return res.status(STATUS_CODES.BAD_REQUEST).json(
-        badRequestResponse(`ID không hợp lệ: ${error.value}`)
+        badRequestResponse('Thông tin không hợp lệ, vui lòng kiểm tra lại')
       );
     }
 
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern || {})[0];
       const value = error.keyValue?.[field];
+      
+      let message = '';
+      if (field === 'phone') {
+        message = `Số điện thoại "${value}" đã được sử dụng`;
+      } else if (field === 'email') {
+        message = `Email "${value}" đã tồn tại trong hệ thống`;
+      } else if (field === 'userId') {
+        message = 'Tài khoản này đã được gán cho giáo viên khác';
+      } else {
+        message = `${field} "${value}" đã tồn tại trong hệ thống`;
+      }
+      
       return res.status(STATUS_CODES.CONFLICT).json(
-        conflictResponse(`${field} "${value}" đã tồn tại trong hệ thống`, { field, value })
+        conflictResponse(message, { field, value })
       );
     }
 

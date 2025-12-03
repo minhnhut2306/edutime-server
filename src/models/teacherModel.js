@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+
 const teacherSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -21,7 +22,7 @@ const teacherSchema = new mongoose.Schema({
   mainClassId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Class",
-    required: true,
+    sparse: true,
   },
   schoolYearId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -46,7 +47,6 @@ const teacherSchema = new mongoose.Schema({
 });
 
 teacherSchema.index({ userId: 1 }, { unique: true, sparse: true });
-// ✅ Phone unique TOÀN HỆ THỐNG (không phụ thuộc schoolYearId)
 teacherSchema.index({ phone: 1 }, { unique: true, sparse: true });
 teacherSchema.index({ schoolYearId: 1, status: 1 });
 
