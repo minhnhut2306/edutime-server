@@ -1,11 +1,10 @@
-const { forbiddenResponse } = require("../helper/createResponse.helper");
+const { forbiddenResponse, unauthorizedResponse } = require("../helper/createResponse.helper");
 
 const isAdmin = (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: "Chưa xác thực người dùng",
-    });
+    return res.status(401).json(
+      unauthorizedResponse("Chưa xác thực người dùng")
+    );
   }
 
   if (req.user.role !== "admin") {

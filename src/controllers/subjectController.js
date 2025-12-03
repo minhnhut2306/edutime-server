@@ -1,61 +1,73 @@
 const subjectService = require("../services/subjectService");
 const asyncHandler = require("../middleware/asyncHandler");
-const SchoolYear = require("../models/schoolYearModel"); // ✅ THÊM
+const SchoolYear = require("../models/schoolYearModel");
 const {
-    successResponse,
-    createdResponse,
-    notFoundResponse,
-    badRequestResponse,
-    conflictResponse
+  successResponse,
+  createdResponse,
+  badRequestResponse
 } = require("../helper/createResponse.helper");
 
+const MONGODB_ID_PATTERN = /^[0-9a-fA-F]{24}$/;
+
+const getSchoolYearId = async (schoolYearString) => {
+  if (!schoolYearString) return null;
+  
+  const schoolYear = await SchoolYear.findOne({ year: schoolYearString });
+  if (!schoolYear) {
+    throw new Error(`Không tìm thấy năm học ${schoolYearString}`);
+  }
+  return schoolYear._id;
+};
+
 const getSubjects = asyncHandler(async (req, res) => {
-    // ✅ FIX: Convert schoolYear string sang schoolYearId
-    let schoolYearId = null;
-    if (req.query.schoolYear) {
-        const schoolYear = await SchoolYear.findOne({ year: req.query.schoolYear });
-        if (!schoolYear) {
-            return res.status(404).json({
-                code: 404,
-                msg: `Không tìm thấy năm học ${req.query.schoolYear}`
-            });
-        }
-        schoolYearId = schoolYear._id;
-    }
+  const schoolYearId = await getSchoolYearId(req.query.schoolYear);
 
-    const filters = {
-        name: req.query.name,
-        schoolYearId, // ✅ Truyền ObjectId
-    };
+  const filters = {
+    name: req.query.name,
+    schoolYearId
+  };
 
-    const subjects = await subjectService.getSubjects(filters);
-    return res.json(successResponse("Lấy danh sách môn học thành công", { subjects }));
+  const subjects = await subjectService.getSubjects(filters);
+  
+  return res.json(
+    successResponse("Lấy danh sách môn học thành công", { subjects })
+  );
 });
 
 const createSubject = asyncHandler(async (req, res) => {
-    const { name } = req.body;
+  const { name } = req.body;
 
-    if (!name || name.trim() === "") {
-        return res.status(400).json(badRequestResponse("Tên môn học không được để trống"));
-    }
+  if (!name?.trim()) {
+    return res.status(400).json(
+      badRequestResponse("Tên môn học không được để trống")
+    );
+  }
 
-    const subject = await subjectService.createSubject({ name: name.trim() });
-    return res.status(201).json(createdResponse("Tạo môn học thành công", { subject }));
+  const subject = await subjectService.createSubject({ name: name.trim() });
+  
+  return res.status(201).json(
+    createdResponse("Tạo môn học thành công", { subject })
+  );
 });
 
 const deleteSubject = asyncHandler(async (req, res) => {
-    const { id } = req.params;
+  const { id } = req.params;
 
-    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
-        return res.status(400).json(badRequestResponse("ID môn học không hợp lệ"));
-    }
+  if (!MONGODB_ID_PATTERN.test(id)) {
+    return res.status(400).json(
+      badRequestResponse("ID môn học không hợp lệ")
+    );
+  }
 
-    const result = await subjectService.deleteSubject(id);
-    return res.json(successResponse(result.message, { subject: result.deletedSubject }));
+  const result = await subjectService.deleteSubject(id);
+  
+  return res.json(
+    successResponse(result.message, { subject: result.deletedSubject })
+  );
 });
 
 module.exports = {
-    getSubjects,
-    createSubject,
-    deleteSubject
+  getSubjects,
+  createSubject,
+  deleteSubject
 };

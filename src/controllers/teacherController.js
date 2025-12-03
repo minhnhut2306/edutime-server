@@ -3,8 +3,7 @@ const asyncHandler = require("../middleware/asyncHandler");
 const {
   successResponse,
   createdResponse,
-  badRequestResponse,
-  notFoundResponse,
+  badRequestResponse
 } = require("../helper/createResponse.helper");
 
 const getTeachers = asyncHandler(async (req, res) => {
@@ -13,7 +12,7 @@ const getTeachers = asyncHandler(async (req, res) => {
     phone: req.query.phone,
     subjectId: req.query.subjectId,
     mainClassId: req.query.mainClassId,
-    schoolYear: req.query.schoolYear,
+    schoolYear: req.query.schoolYear
   };
 
   const teachers = await teacherService.getTeachers(filters);
@@ -36,20 +35,16 @@ const createTeacher = asyncHandler(async (req, res) => {
   const { name, subjectIds, mainClassId } = req.body;
 
   if (!name || !subjectIds || !mainClassId) {
-    return res
-      .status(400)
-      .json(
-        badRequestResponse(
-          "Thiếu thông tin bắt buộc: tên, môn học và lớp chủ nhiệm"
-        )
-      );
+    return res.status(400).json(
+      badRequestResponse("Thiếu thông tin bắt buộc: tên, môn học và lớp chủ nhiệm")
+    );
   }
 
   const teacher = await teacherService.createTeacher(req.body);
 
-  return res
-    .status(201)
-    .json(createdResponse("Thêm giáo viên thành công", { teacher }));
+  return res.status(201).json(
+    createdResponse("Thêm giáo viên thành công", { teacher })
+  );
 });
 
 const updateTeacher = asyncHandler(async (req, res) => {
@@ -66,7 +61,9 @@ const updateTeacherUserId = asyncHandler(async (req, res) => {
   const { userId } = req.body;
 
   if (!userId) {
-    return res.status(400).json(badRequestResponse("userId là bắt buộc"));
+    return res.status(400).json(
+      badRequestResponse("userId là bắt buộc")
+    );
   }
 
   const teacher = await teacherService.updateTeacherUserId(id, userId);
@@ -80,22 +77,23 @@ const deleteTeacher = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const result = await teacherService.deleteTeacher(id);
 
-  return res.json(successResponse("Xóa giáo viên thành công", result));
+  return res.json(
+    successResponse("Xóa giáo viên thành công", result)
+  );
 });
 
 const importTeachers = asyncHandler(async (req, res) => {
-  console.log("req.file:", req.file);
-  console.log("req.body:", req.body); 
-
   if (!req.file) {
-    return res
-      .status(400)
-      .json(badRequestResponse("Vui lòng tải lên file Excel"));
+    return res.status(400).json(
+      badRequestResponse("Vui lòng tải lên file Excel")
+    );
   }
 
   const results = await teacherService.importTeachers(req.file);
-  console.log('Import results:', results)
-  return res.json(successResponse("Import giáo viên hoàn tất", results));
+  
+  return res.json(
+    successResponse("Import giáo viên hoàn tất", results)
+  );
 });
 
 module.exports = {
@@ -105,5 +103,5 @@ module.exports = {
   updateTeacher,
   updateTeacherUserId,
   deleteTeacher,
-  importTeachers,
+  importTeachers
 };

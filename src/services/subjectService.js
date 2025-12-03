@@ -1,27 +1,6 @@
 const Subject = require("../models/subjectModel");
 const SchoolYear = require("../models/schoolYearModel");
 
-const getActiveSchoolYearId = async () => {
-  const activeYear = await SchoolYear.findOne({ status: 'active' });
-  if (!activeYear) {
-    throw new Error('Không có năm học đang hoạt động. Vui lòng tạo năm học mới!');
-  }
-  return activeYear._id;
-};
-
-const removeVietnameseTones = (str) => {
-  if (!str) return "";
-  str = str.toLowerCase().trim();
-  str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
-  str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
-  str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
-  str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
-  str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
-  str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
-  str = str.replace(/đ/g, "d");
-  return str;
-};
-
 const SUBJECT_ALIASES = {
   'toan': ['toan', 'toán', 'toán học', 'toan hoc'],
   'van': ['van', 'văn', 'ngữ văn', 'ngu van', 'văn học', 'van hoc'],
@@ -40,14 +19,26 @@ const SUBJECT_ALIASES = {
   'my': ['my', 'mỹ thuật', 'my thuat', 'm.thuật', 'm.thuat', 'hội họa', 'hoi hoa']
 };
 
+const removeVietnameseTones = (str) => {
+  if (!str) return "";
+  
+  return str.toLowerCase().trim()
+    .replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a")
+    .replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e")
+    .replace(/ì|í|ị|ỉ|ĩ/g, "i")
+    .replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o")
+    .replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u")
+    .replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y")
+    .replace(/đ/g, "d");
+};
+
 const normalizeSubjectName = (name) => {
   if (!name) return "";
   const normalized = removeVietnameseTones(name);
   
   for (const [key, aliases] of Object.entries(SUBJECT_ALIASES)) {
     for (const alias of aliases) {
-      const normalizedAlias = removeVietnameseTones(alias);
-      if (normalized === normalizedAlias) {
+      if (normalized === removeVietnameseTones(alias)) {
         return key;
       }
     }
@@ -56,70 +47,69 @@ const normalizeSubjectName = (name) => {
   return normalized;
 };
 
+const getActiveSchoolYearId = async () => {
+  const activeYear = await SchoolYear.findOne({ status: 'active' });
+  if (!activeYear) {
+    throw new Error('Không có năm học đang hoạt động. Vui lòng tạo năm học mới');
+  }
+  return activeYear._id;
+};
+
 const findSubjectByNameFlexible = async (subjectName, schoolYearId) => {
   if (!subjectName) return null;
 
   const allSubjects = await Subject.find({ schoolYearId, status: "active" });
-  
   const inputNormalized = normalizeSubjectName(subjectName);
   
-  const subject = allSubjects.find((s) => {
-    const dbNormalized = normalizeSubjectName(s.name);
-    return dbNormalized === inputNormalized;
-  });
-
-  return subject;
+  return allSubjects.find(s => normalizeSubjectName(s.name) === inputNormalized);
 };
 
 const getSubjects = async (filters = {}) => {
   const schoolYearId = filters.schoolYearId || await getActiveSchoolYearId();
   
-  const query = {
-    schoolYearId,
-  };
+  const query = { schoolYearId };
 
   if (filters.name) {
     query.name = { $regex: filters.name, $options: "i" };
   }
 
-  const subjects = await Subject.find(query).sort({ createdAt: -1 });
-  return subjects;
+  return await Subject.find(query).sort({ createdAt: -1 });
 };
 
 const createSubject = async (data) => {
   const { name } = data;
   const schoolYearId = await getActiveSchoolYearId();
 
-  if (!name || name.trim() === "") {
-    throw new Error("Subject name is required");
+  if (!name?.trim()) {
+    throw new Error("Tên môn học là bắt buộc");
   }
 
-  const existingSubject = await findSubjectByNameFlexible(name.trim(), schoolYearId);
+  const trimmedName = name.trim();
+  const existingSubject = await findSubjectByNameFlexible(trimmedName, schoolYearId);
   
   if (existingSubject) {
     throw new Error(`Môn học đã tồn tại với tên "${existingSubject.name}"`);
   }
 
-  const subject = await Subject.create({ 
-    name: name.trim(),
+  return await Subject.create({ 
+    name: trimmedName,
     schoolYearId,
     status: 'active'
   });
-  
-  return subject;
 };
 
 const deleteSubject = async (id) => {
   const subject = await Subject.findByIdAndDelete(id);
   if (!subject) {
-    throw new Error("Subject not found");
+    throw new Error("Không tìm thấy môn học");
   }
+  
   return {
-    message: "Subject deleted successfully",
+    message: "Xóa môn học thành công",
     deletedSubject: {
       id: subject._id,
-      name: subject.name,
-    },
+      name: subject.name
+    }
   };
 };
 
@@ -128,5 +118,5 @@ module.exports = {
   createSubject,
   deleteSubject,
   findSubjectByNameFlexible,
-  normalizeSubjectName,
+  normalizeSubjectName
 };

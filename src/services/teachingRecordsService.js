@@ -3,66 +3,83 @@ const Teacher = require("../models/teacherModel");
 const Week = require("../models/weekModel");
 const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
+const mongoose = require('mongoose');
 
-// ✅ FIX: THÊM teacherId vào populate
+const POPULATE_OPTIONS = [
+  { path: "teacherId", select: "name email phone" },
+  { path: "weekId", select: "weekNumber startDate endDate schoolYearId" },
+  { path: "subjectId", select: "name code" },
+  { path: "classId", select: "name grade studentCount" }
+];
+
+const PERIODS_MIN = 1;
+const PERIODS_MAX = 20;
+
+const validatePeriods = (periods) => {
+  if (periods !== undefined && (periods < PERIODS_MIN || periods > PERIODS_MAX)) {
+    throw new Error(`Số tiết phải từ ${PERIODS_MIN} đến ${PERIODS_MAX}`);
+  }
+};
+
+const validateTeacherGrade = (teacher, classGrade) => {
+  if (
+    Array.isArray(teacher.allowedGrades) &&
+    teacher.allowedGrades.length > 0 &&
+    !teacher.allowedGrades.includes(classGrade)
+  ) {
+    throw new Error(
+      `Bạn không có quyền dạy khối ${classGrade}. Chỉ được dạy khối: ${teacher.allowedGrades.join(", ")}`
+    );
+  }
+};
+
+const checkDuplicateRecord = async (teacherId, weekId, subjectId, classId, excludeId = null) => {
+  const query = { teacherId, weekId, subjectId, classId };
+  if (excludeId) query._id = { $ne: excludeId };
+  
+  const existing = await TeachingRecords.findOne(query);
+  if (existing) {
+    throw new Error("Bản ghi này đã tồn tại (cùng tuần, môn học và lớp)");
+  }
+};
+
+const validateEntities = async (teacherId, weekId, subjectId, classId) => {
+  const [teacher, week, subject, classData] = await Promise.all([
+    Teacher.findById(teacherId),
+    Week.findById(weekId),
+    Subject.findById(subjectId),
+    Class.findById(classId)
+  ]);
+
+  if (!teacher) throw new Error("Không tìm thấy giáo viên");
+  if (!week) throw new Error("Không tìm thấy tuần học");
+  if (!subject) throw new Error("Không tìm thấy môn học");
+  if (!classData) throw new Error("Không tìm thấy lớp học");
+
+  return { teacher, week, subject, classData };
+};
+
 const getAllTeachingRecords = async (schoolYearId = null) => {
   try {
-    const query = {};
-  
-    if (schoolYearId) {
-      query.schoolYearId = schoolYearId;
-      console.log('🔍 [Service] getAllTeachingRecords query:', {
-        schoolYearId: schoolYearId.toString()
-      });
-    }
+    const query = schoolYearId ? { schoolYearId } : {};
 
     const records = await TeachingRecords.find(query)
-      // ✅ THÊM teacherId vào populate
-      .populate("teacherId", "name email phone")  // ⬅️ DÒNG NÀY BỊ THIẾU
-      .populate("weekId", "weekNumber startDate endDate schoolYearId")
-      .populate("subjectId", "name code")
-      .populate("classId", "name grade studentCount")
+      .populate(POPULATE_OPTIONS)
       .sort({ createdAt: -1 });
-
-    console.log('✅ [Service] getAllTeachingRecords result:', {
-      count: records.length,
-      firstRecord: records[0] ? {
-        _id: records[0]._id,
-        teacherId: records[0].teacherId ? 
-          { _id: records[0].teacherId._id, name: records[0].teacherId.name } : 
-          'NOT POPULATED',
-        weekId: records[0].weekId ? 
-          { _id: records[0].weekId._id, weekNumber: records[0].weekId.weekNumber } : 
-          'NOT POPULATED',
-        classId: records[0].classId ? 
-          { _id: records[0].classId._id, name: records[0].classId.name } : 
-          'NOT POPULATED',
-        subjectId: records[0].subjectId ? 
-          { _id: records[0].subjectId._id, name: records[0].subjectId.name } : 
-          'NOT POPULATED',
-        periods: records[0].periods,
-        recordType: records[0].recordType
-      } : null
-    });
 
     return { success: true, data: records };
   } catch (err) {
-    console.error('❌ [Service] getAllTeachingRecords error:', err);
     return { success: false, message: err.message };
   }
 };
 
-// ✅ FIX: THÊM teacherId vào populate
 const getTeachingRecordsByTeacher = async (teacherId, schoolYearId = null) => {
   try {
     if (!teacherId) {
-      console.log('⚠️ [Service] No teacherId provided');
       return { success: true, data: [], total: 0 };
     }
 
-    const mongoose = require('mongoose');
     if (!mongoose.Types.ObjectId.isValid(teacherId)) {
-      console.error('❌ [Service] Invalid teacherId:', teacherId);
       return {
         success: false,
         statusCode: 400,
@@ -75,44 +92,19 @@ const getTeachingRecordsByTeacher = async (teacherId, schoolYearId = null) => {
       return {
         success: false,
         statusCode: 404,
-        message: "Không tìm thấy giáo viên",
+        message: "Không tìm thấy giáo viên"
       };
     }
     
     const query = { teacherId };
-    
-    if (schoolYearId) {
-      query.schoolYearId = schoolYearId;
-      console.log('🔍 [Service] getTeachingRecordsByTeacher query:', {
-        teacherId: teacherId.toString(),
-        teacherName: teacher.name,
-        schoolYearId: schoolYearId.toString()
-      });
-    }
+    if (schoolYearId) query.schoolYearId = schoolYearId;
 
     const records = await TeachingRecords.find(query)
-      // ✅ THÊM teacherId vào populate
-      .populate("teacherId", "name email phone")  // ⬅️ DÒNG NÀY BỊ THIẾU
-      .populate("weekId", "weekNumber startDate endDate schoolYearId")
-      .populate("subjectId", "name code")
-      .populate("classId", "name grade studentCount")
+      .populate(POPULATE_OPTIONS)
       .sort({ createdAt: -1 });
-
-    console.log('✅ [Service] getTeachingRecordsByTeacher result:', {
-      count: records.length,
-      teacherName: teacher.name,
-      firstRecord: records[0] ? {
-        _id: records[0]._id,
-        teacherId: records[0].teacherId?.name || 'NOT POPULATED',
-        weekId: records[0].weekId?.weekNumber || 'NOT POPULATED',
-        classId: records[0].classId?.name || 'NOT POPULATED',
-        subjectId: records[0].subjectId?.name || 'NOT POPULATED'
-      } : null
-    });
 
     return { success: true, data: records, total: records.length };
   } catch (err) {
-    console.error('❌ [Service] getTeachingRecordsByTeacher error:', err);
     return { success: false, message: err.message };
   }
 };
@@ -128,78 +120,21 @@ const createTeachingRecord = async (data) => {
       schoolYearId,
       createdBy,
       recordType,
-      notes,
+      notes
     } = data;
 
-    console.log("📥 CREATE - Data nhận vào:", {
+    validatePeriods(periods);
+
+    const { teacher, classData } = await validateEntities(
       teacherId,
       weekId,
       subjectId,
-      classId,
-      periods,
-      schoolYearId,
-      recordType: recordType || "teaching",
-      notes: notes || "",
-      createdBy,
-    });
+      classId
+    );
 
-    const [teacher, week, subject, classData, existingRecord] =
-      await Promise.all([
-        Teacher.findById(teacherId),
-        Week.findById(weekId),
-        Subject.findById(subjectId),
-        Class.findById(classId),
-        TeachingRecords.findOne({ teacherId, weekId, subjectId, classId }),
-      ]);
+    validateTeacherGrade(teacher, classData.grade);
 
-    if (!teacher) {
-      return {
-        success: false,
-        statusCode: 404,
-        message: "Không tìm thấy giáo viên",
-      };
-    }
-    if (!week) {
-      return {
-        success: false,
-        statusCode: 404,
-        message: "Không tìm thấy tuần học",
-      };
-    }
-    if (!subject) {
-      return {
-        success: false,
-        statusCode: 404,
-        message: "Không tìm thấy môn học",
-      };
-    }
-    if (!classData) {
-      return {
-        success: false,
-        statusCode: 404,
-        message: "Không tìm thấy lớp học",
-      };
-    }
-    if (
-      Array.isArray(teacher.allowedGrades) &&
-      teacher.allowedGrades.length > 0 &&
-      !teacher.allowedGrades.includes(classData.grade)
-    ) {
-      return {
-        success: false,
-        statusCode: 403,
-        message: `Bạn không có quyền dạy khối ${
-          classData.grade
-        }. Chỉ được dạy khối: ${teacher.allowedGrades.join(", ")}`,
-      };
-    }
-    if (existingRecord) {
-      return {
-        success: false,
-        statusCode: 409,
-        message: "Bản ghi này đã tồn tại (cùng tuần, môn học và lớp)",
-      };
-    }
+    await checkDuplicateRecord(teacherId, weekId, subjectId, classId);
 
     const newRecord = await TeachingRecords.create({
       teacherId,
@@ -210,31 +145,18 @@ const createTeachingRecord = async (data) => {
       schoolYearId,
       createdBy,
       recordType: recordType || "teaching",
-      notes: notes || "",
-    });
-
-    console.log("✅ CREATE - Bản ghi đã tạo:", {
-      id: newRecord._id,
-      recordType: newRecord.recordType,
-      notes: newRecord.notes,
-      periods: newRecord.periods,
+      notes: notes || ""
     });
 
     const populatedRecord = await TeachingRecords.findById(newRecord._id)
-      .populate("teacherId", "name email phone")  // ✅ THÊM
-      .populate("weekId", "weekNumber startDate endDate schoolYearId")
-      .populate("subjectId", "name code")
-      .populate("classId", "name grade");
-
-    console.log("✅ CREATE - Bản ghi sau populate:", {
-      id: populatedRecord._id,
-      recordType: populatedRecord.recordType,
-      notes: populatedRecord.notes,
-    });
+      .populate(POPULATE_OPTIONS);
 
     return { success: true, data: populatedRecord };
   } catch (err) {
-    return { success: false, message: err.message };
+    const statusCode = err.message.includes("không tìm thấy") ? 404 :
+                      err.message.includes("không có quyền") ? 403 :
+                      err.message.includes("đã tồn tại") ? 409 : 400;
+    return { success: false, statusCode, message: err.message };
   }
 };
 
@@ -248,132 +170,47 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
       periods,
       schoolYearId,
       recordType,
-      notes,
+      notes
     } = data;
-
-    console.log("📥 UPDATE - Data nhận vào:", {
-      recordId,
-      teacherId,
-      weekId,
-      subjectId,
-      classId,
-      periods,
-      schoolYearId,
-      recordType,
-      notes,
-      currentTeacherId,
-    });
 
     const record = await TeachingRecords.findById(recordId);
     if (!record) {
       return {
         success: false,
         statusCode: 404,
-        message: "Không tìm thấy bản ghi",
+        message: "Không tìm thấy bản ghi"
       };
     }
 
-    console.log("📄 UPDATE - Bản ghi hiện tại:", {
-      id: record._id,
-      recordType: record.recordType,
-      notes: record.notes,
-      periods: record.periods,
-    });
-
-    if (currentTeacherId) {
-      if (record.teacherId.toString() !== currentTeacherId.toString()) {
-        return {
-          success: false,
-          statusCode: 403,
-          message: "Bạn chỉ có quyền sửa bản ghi của chính mình",
-        };
-      }
-    }
-
-    if (periods !== undefined && (periods < 1 || periods > 20)) {
-      return {
-        success: false,
-        statusCode: 400,
-        message: "Số tiết phải từ 1 đến 20",
-      };
-    }
-    if (schoolYearId !== undefined) {
-      const schoolYearIdRegex = /^\d{4}-\d{4}$/;
-      if (!schoolYearIdRegex.test(schoolYearId)) {
-        return {
-          success: false,
-          statusCode: 400,
-          message: "Năm học không đúng định dạng (VD: 2024-2025)",
-        };
-      }
-    }
-
-    const targetTeacherId = teacherId || record.teacherId;
-    const teacher = await Teacher.findById(targetTeacherId);
-    if (!teacher) {
-      return {
-        success: false,
-        statusCode: 404,
-        message: "Không tìm thấy giáo viên",
-      };
-    }
-
-    const targetClassId = classId || record.classId;
-    const classData = await Class.findById(targetClassId);
-    if (!classData) {
-      return {
-        success: false,
-        statusCode: 404,
-        message: "Không tìm thấy lớp học",
-      };
-    }
-    if (
-      teacher.allowedGrades &&
-      teacher.allowedGrades.length > 0 &&
-      !teacher.allowedGrades.includes(classData.grade)
-    ) {
+    if (currentTeacherId && record.teacherId.toString() !== currentTeacherId.toString()) {
       return {
         success: false,
         statusCode: 403,
-        message: `Bạn không có quyền dạy khối ${
-          classData.grade
-        }. Chỉ được dạy khối: ${teacher.allowedGrades.join(", ")}`,
+        message: "Bạn chỉ có quyền sửa bản ghi của chính mình"
       };
     }
 
-    if (weekId) {
-      const week = await Week.findById(weekId);
-      if (!week)
-        return {
-          success: false,
-          statusCode: 404,
-          message: "Không tìm thấy tuần học",
-        };
-    }
-    if (subjectId) {
-      const subject = await Subject.findById(subjectId);
-      if (!subject)
-        return {
-          success: false,
-          statusCode: 404,
-          message: "Không tìm thấy môn học",
-        };
-    }
+    validatePeriods(periods);
 
-    const existing = await TeachingRecords.findOne({
-      _id: { $ne: recordId },
-      teacherId: teacherId || record.teacherId,
-      weekId: weekId || record.weekId,
-      subjectId: subjectId || record.subjectId,
-      classId: classId || record.classId,
-    });
-    if (existing) {
-      return {
-        success: false,
-        statusCode: 409,
-        message: "Đã tồn tại bản ghi với cùng tuần, môn và lớp",
-      };
-    }
+    const targetTeacherId = teacherId || record.teacherId;
+    const targetClassId = classId || record.classId;
+
+    const { teacher, classData } = await validateEntities(
+      targetTeacherId,
+      weekId || record.weekId,
+      subjectId || record.subjectId,
+      targetClassId
+    );
+
+    validateTeacherGrade(teacher, classData.grade);
+
+    await checkDuplicateRecord(
+      teacherId || record.teacherId,
+      weekId || record.weekId,
+      subjectId || record.subjectId,
+      classId || record.classId,
+      recordId
+    );
 
     if (teacherId) record.teacherId = teacherId;
     if (weekId) record.weekId = weekId;
@@ -384,38 +221,18 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
     if (recordType !== undefined) record.recordType = recordType;
     if (notes !== undefined) record.notes = notes;
 
-    console.log("🔄 UPDATE - Trước khi save:", {
-      id: record._id,
-      recordType: record.recordType,
-      notes: record.notes,
-      periods: record.periods,
-    });
-
     record.updatedAt = new Date();
     await record.save();
 
-    console.log("💾 UPDATE - Sau khi save:", {
-      id: record._id,
-      recordType: record.recordType,
-      notes: record.notes,
-      periods: record.periods,
-    });
-
     const populatedRecord = await TeachingRecords.findById(record._id)
-      .populate("teacherId", "name email phone")  // ✅ THÊM
-      .populate("weekId", "weekNumber startDate endDate schoolYearId")
-      .populate("subjectId", "name code")
-      .populate("classId", "name grade");
-
-    console.log("✅ UPDATE - Sau populate:", {
-      id: populatedRecord._id,
-      recordType: populatedRecord.recordType,
-      notes: populatedRecord.notes,
-    });
+      .populate(POPULATE_OPTIONS);
 
     return { success: true, data: populatedRecord };
   } catch (err) {
-    return { success: false, message: err.message };
+    const statusCode = err.message.includes("không tìm thấy") ? 404 :
+                      err.message.includes("không có quyền") || err.message.includes("chỉ có quyền") ? 403 :
+                      err.message.includes("đã tồn tại") ? 409 : 400;
+    return { success: false, statusCode, message: err.message };
   }
 };
 
@@ -426,18 +243,18 @@ const deleteTeachingRecord = async (recordId, currentTeacherId) => {
       return {
         success: false,
         statusCode: 404,
-        message: "Không tìm thấy bản ghi",
+        message: "Không tìm thấy bản ghi"
       };
     }
-    if (currentTeacherId) {
-      if (record.teacherId.toString() !== currentTeacherId.toString()) {
-        return {
-          success: false,
-          statusCode: 403,
-          message: "Bạn chỉ có thể xóa bản ghi của chính mình",
-        };
-      }
+
+    if (currentTeacherId && record.teacherId.toString() !== currentTeacherId.toString()) {
+      return {
+        success: false,
+        statusCode: 403,
+        message: "Bạn chỉ có thể xóa bản ghi của chính mình"
+      };
     }
+
     await TeachingRecords.findByIdAndDelete(recordId);
     return { success: true, data: { deletedId: recordId } };
   } catch (err) {
@@ -450,5 +267,5 @@ module.exports = {
   getTeachingRecordsByTeacher,
   createTeachingRecord,
   updateTeachingRecord,
-  deleteTeachingRecord,
+  deleteTeachingRecord
 };
