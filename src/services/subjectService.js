@@ -1,6 +1,24 @@
 const Subject = require("../models/subjectModel");
 const SchoolYear = require("../models/schoolYearModel");
 
+const STANDARD_SUBJECT_NAMES = {
+  'toan': 'Toán',
+  'van': 'Ngữ Văn',
+  'anh': 'Tiếng Anh',
+  'ly': 'Vật Lý',
+  'hoa': 'Hóa Học',
+  'sinh': 'Sinh Học',
+  'su': 'Lịch Sử',
+  'dia': 'Địa Lý',
+  'gdcd': 'Giáo Dục Công Dân',
+  'tin': 'Tin Học',
+  'td': 'Thể Dục',
+  'qp': 'Giáo Dục Quốc Phòng',
+  'cong': 'Công Nghệ',
+  'am': 'Âm Nhạc',
+  'my': 'Mỹ Thuật'
+};
+
 const SUBJECT_ALIASES = {
   'toan': ['toan', 'toán', 'toán học', 'toan hoc'],
   'van': ['van', 'văn', 'ngữ văn', 'ngu van', 'văn học', 'van hoc'],
@@ -32,6 +50,15 @@ const removeVietnameseTones = (str) => {
     .replace(/đ/g, "d");
 };
 
+const capitalizeWords = (str) => {
+  if (!str) return "";
+  return str
+    .trim()
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
 const normalizeSubjectName = (name) => {
   if (!name) return "";
   const normalized = removeVietnameseTones(name);
@@ -47,6 +74,18 @@ const normalizeSubjectName = (name) => {
   return normalized;
 };
 
+const standardizeSubjectName = (name) => {
+  if (!name) return "";
+  
+  const normalizedKey = normalizeSubjectName(name);
+  
+  if (STANDARD_SUBJECT_NAMES[normalizedKey]) {
+    return STANDARD_SUBJECT_NAMES[normalizedKey];
+  }
+  
+  return capitalizeWords(name.trim());
+};
+
 const getActiveSchoolYearId = async () => {
   const activeYear = await SchoolYear.findOne({ status: 'active' });
   if (!activeYear) {
@@ -55,10 +94,13 @@ const getActiveSchoolYearId = async () => {
   return activeYear._id;
 };
 
-const findSubjectByNameFlexible = async (subjectName, schoolYearId) => {
+const findSubjectByNameFlexible = async (subjectName, schoolYearId, excludeId = null) => {
   if (!subjectName) return null;
 
-  const allSubjects = await Subject.find({ schoolYearId, status: "active" });
+  const query = { schoolYearId, status: "active" };
+  if (excludeId) query._id = { $ne: excludeId };
+
+  const allSubjects = await Subject.find(query);
   const inputNormalized = normalizeSubjectName(subjectName);
   
   return allSubjects.find(s => normalizeSubjectName(s.name) === inputNormalized);
@@ -84,21 +126,51 @@ const createSubject = async (data) => {
     throw new Error("Tên môn học là bắt buộc");
   }
 
-  const trimmedName = name.trim();
-  const existingSubject = await findSubjectByNameFlexible(trimmedName, schoolYearId);
+  const standardizedName = standardizeSubjectName(name);
+  const existingSubject = await findSubjectByNameFlexible(standardizedName, schoolYearId);
   
   if (existingSubject) {
     throw new Error(`Môn học đã tồn tại với tên "${existingSubject.name}"`);
   }
 
   return await Subject.create({ 
-    name: trimmedName,
+    name: standardizedName,
     schoolYearId,
     status: 'active'
   });
 };
 
+const updateSubject = async (id, data) => {
+  if (!id) throw new Error("Thông tin môn học là bắt buộc");
+
+  const subject = await Subject.findById(id);
+  if (!subject) throw new Error("Không tìm thấy môn học");
+
+  if (data.name) {
+    const standardizedName = standardizeSubjectName(data.name);
+    
+    const existingSubject = await findSubjectByNameFlexible(
+      standardizedName, 
+      subject.schoolYearId, 
+      id
+    );
+    
+    if (existingSubject) {
+      throw new Error(`Môn học đã tồn tại với tên "${existingSubject.name}"`);
+    }
+
+    subject.name = standardizedName;
+  }
+
+  subject.updatedAt = Date.now();
+  await subject.save();
+
+  return subject;
+};
+
 const deleteSubject = async (id) => {
+  if (!id) throw new Error("Thông tin môn học là bắt buộc");
+
   const subject = await Subject.findByIdAndDelete(id);
   if (!subject) {
     throw new Error("Không tìm thấy môn học");
@@ -116,7 +188,9 @@ const deleteSubject = async (id) => {
 module.exports = {
   getSubjects,
   createSubject,
+  updateSubject,
   deleteSubject,
   findSubjectByNameFlexible,
-  normalizeSubjectName
+  normalizeSubjectName,
+  standardizeSubjectName
 };

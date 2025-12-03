@@ -51,6 +51,7 @@ router.post("/classes/import", authMiddleware, upload.single("file"), classContr
 
 router.get("/subjects", authMiddleware, subjectController.getSubjects);
 router.post("/subjects", authMiddleware, subjectController.createSubject);
+router.put("/subjects/:id", authMiddleware, subjectController.updateSubject);
 router.delete("/subjects/:id", authMiddleware, subjectController.deleteSubject);
 
 router.get("/weeks", authMiddleware, weekController.getWeeks);

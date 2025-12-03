@@ -12,6 +12,8 @@ const logger = require('../utils/logger');
 const ERROR_MAP = {
   'User not found': { status: STATUS_CODES.NOT_FOUND, msg: 'Người dùng không tồn tại', handler: notFoundResponse },
   'Class not found': { status: STATUS_CODES.NOT_FOUND, msg: 'Không tìm thấy lớp học', handler: notFoundResponse },
+  'Subject not found': { status: STATUS_CODES.NOT_FOUND, msg: 'Không tìm thấy môn học', handler: notFoundResponse },
+  'Teacher not found': { status: STATUS_CODES.NOT_FOUND, msg: 'Không tìm thấy giáo viên', handler: notFoundResponse },
   'Invalid password': { status: STATUS_CODES.UNAUTHORIZED, msg: 'Mật khẩu không đúng', handler: unauthorizedResponse },
   'User already exists': { status: STATUS_CODES.CONFLICT, msg: 'Email đã tồn tại', handler: conflictResponse },
   'Class name already exists': { status: STATUS_CODES.CONFLICT, msg: 'Tên lớp đã tồn tại', handler: conflictResponse },
@@ -37,8 +39,16 @@ const asyncHandler = (fn) => (req, res, next) => {
     }
 
     if (error.name === 'CastError') {
+      let friendlyMessage = 'Thông tin không hợp lệ';
+      
+      if (error.path === '_id') {
+        friendlyMessage = 'Không tìm thấy dữ liệu yêu cầu. Vui lòng kiểm tra lại';
+      } else if (error.kind === 'ObjectId') {
+        friendlyMessage = 'Mã định danh không đúng định dạng. Vui lòng thử lại';
+      }
+      
       return res.status(STATUS_CODES.BAD_REQUEST).json(
-        badRequestResponse('Thông tin không hợp lệ, vui lòng kiểm tra lại')
+        badRequestResponse(friendlyMessage)
       );
     }
 
@@ -47,14 +57,25 @@ const asyncHandler = (fn) => (req, res, next) => {
       const value = error.keyValue?.[field];
       
       let message = '';
+      const fieldNames = {
+        'phone': 'Số điện thoại',
+        'email': 'Email',
+        'userId': 'Tài khoản',
+        'name': 'Tên'
+      };
+      
+      const friendlyFieldName = fieldNames[field] || field;
+      
       if (field === 'phone') {
-        message = `Số điện thoại "${value}" đã được sử dụng`;
+        message = `${friendlyFieldName} "${value}" đã được sử dụng`;
       } else if (field === 'email') {
-        message = `Email "${value}" đã tồn tại trong hệ thống`;
+        message = `${friendlyFieldName} "${value}" đã tồn tại trong hệ thống`;
       } else if (field === 'userId') {
         message = 'Tài khoản này đã được gán cho giáo viên khác';
+      } else if (field === 'name') {
+        message = `${friendlyFieldName} "${value}" đã tồn tại`;
       } else {
-        message = `${field} "${value}" đã tồn tại trong hệ thống`;
+        message = `${friendlyFieldName} "${value}" đã tồn tại trong hệ thống`;
       }
       
       return res.status(STATUS_CODES.CONFLICT).json(
@@ -64,13 +85,13 @@ const asyncHandler = (fn) => (req, res, next) => {
 
     if (error.name === 'JsonWebTokenError') {
       return res.status(STATUS_CODES.UNAUTHORIZED).json(
-        unauthorizedResponse('Token không hợp lệ')
+        unauthorizedResponse('Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại')
       );
     }
 
     if (error.name === 'TokenExpiredError') {
       return res.status(STATUS_CODES.UNAUTHORIZED).json(
-        unauthorizedResponse('Token đã hết hạn')
+        unauthorizedResponse('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại')
       );
     }
 
@@ -78,13 +99,29 @@ const asyncHandler = (fn) => (req, res, next) => {
     if (mappedError) {
       return res.status(mappedError.status).json(mappedError.handler(mappedError.msg));
     }
+    if (error.message.includes('không tìm thấy') || error.message.includes('not found')) {
+      return res.status(STATUS_CODES.NOT_FOUND).json(
+        notFoundResponse(error.message)
+      );
+    }
+    if (error.message.includes('đã tồn tại') || error.message.includes('already exists')) {
+      return res.status(STATUS_CODES.CONFLICT).json(
+        conflictResponse(error.message)
+      );
+    }
 
     if (error.message.includes('Email') || error.message.includes('Password')) {
       return res.status(STATUS_CODES.BAD_REQUEST).json(badRequestResponse(error.message));
     }
+    if (error.message.includes('bắt buộc') || error.message.includes('required') || 
+        error.message.includes('không được để trống')) {
+      return res.status(STATUS_CODES.BAD_REQUEST).json(
+        badRequestResponse(error.message)
+      );
+    }
 
     const statusCode = error.statusCode || STATUS_CODES.INTERNAL_SERVER_ERROR;
-    const message = error.message || 'Có lỗi xảy ra trên server';
+    const message = error.message || 'Có lỗi xảy ra, vui lòng thử lại sau';
 
     const response = serverErrorResponse(message, {
       ...(process.env.NODE_ENV === 'development' && { 

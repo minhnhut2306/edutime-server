@@ -37,36 +37,79 @@ const getClasses = asyncHandler(async (req, res) => {
 });
 
 const getClassById = asyncHandler(async (req, res) => {
-  const classInfo = await classService.getClassById(req.params.id);
+  const { id } = req.params;
+  
+  if (!id) {
+    return res.status(400).json(
+      badRequestResponse("Thiếu thông tin lớp học")
+    );
+  }
+
+  const classInfo = await classService.getClassById(id);
   res.json(successResponse("Lấy thông tin lớp học thành công", classInfo));
 });
 
 const createClass = asyncHandler(async (req, res) => {
+  const { name, studentCount } = req.body;
+
+  if (!name?.trim()) {
+    return res.status(400).json(
+      badRequestResponse("Vui lòng nhập tên lớp học")
+    );
+  }
+
   const classInfo = await classService.createClass(req.body);
-  res.status(201).json(createdResponse("Tạo lớp học thành công", classInfo));
+  res.status(201).json(createdResponse("Thêm lớp học thành công", classInfo));
 });
 
 const updateClass = asyncHandler(async (req, res) => {
-  const classInfo = await classService.updateClass(req.params.id, req.body);
+  const { id } = req.params;
+  const { name } = req.body;
+
+  if (!id) {
+    return res.status(400).json(
+      badRequestResponse("Thiếu thông tin lớp học cần cập nhật")
+    );
+  }
+
+  if (!name?.trim()) {
+    return res.status(400).json(
+      badRequestResponse("Vui lòng nhập tên lớp học")
+    );
+  }
+
+  const classInfo = await classService.updateClass(id, req.body);
   res.json(successResponse("Cập nhật lớp học thành công", classInfo));
 });
 
 const deleteClass = asyncHandler(async (req, res) => {
-  const result = await classService.deleteClass(req.params.id);
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json(
+      badRequestResponse("Thiếu thông tin lớp học cần xóa")
+    );
+  }
+
+  const result = await classService.deleteClass(id);
   res.json(successResponse(result.message, result.deletedClass));
 });
 
 const importClasses = asyncHandler(async (req, res) => {
   if (!req.file) {
     return res.status(400).json(
-      badRequestResponse("Vui lòng tải lên file Excel")
+      badRequestResponse("Vui lòng chọn file Excel để tải lên")
     );
   }
 
   const result = await classService.importClasses(req.file);
   
+  const message = result.failedCount > 0
+    ? `Đã import ${result.successCount}/${result.total} lớp học. ${result.failedCount} lớp không thể thêm do lỗi`
+    : `Import thành công ${result.successCount} lớp học`;
+
   res.json(
-    successResponse("Import danh sách lớp học hoàn tất", {
+    successResponse(message, {
       total: result.total,
       successCount: result.successCount,
       failedCount: result.failedCount,

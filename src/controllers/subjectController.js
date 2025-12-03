@@ -50,12 +50,35 @@ const createSubject = asyncHandler(async (req, res) => {
   );
 });
 
+const updateSubject = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+
+  if (!MONGODB_ID_PATTERN.test(id)) {
+    return res.status(400).json(
+      badRequestResponse("Thông tin môn học không hợp lệ")
+    );
+  }
+
+  if (!name?.trim()) {
+    return res.status(400).json(
+      badRequestResponse("Tên môn học không được để trống")
+    );
+  }
+
+  const subject = await subjectService.updateSubject(id, { name: name.trim() });
+  
+  return res.json(
+    successResponse("Cập nhật môn học thành công", { subject })
+  );
+});
+
 const deleteSubject = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   if (!MONGODB_ID_PATTERN.test(id)) {
     return res.status(400).json(
-      badRequestResponse("ID môn học không hợp lệ")
+      badRequestResponse("Thông tin môn học không hợp lệ")
     );
   }
 
@@ -69,5 +92,6 @@ const deleteSubject = asyncHandler(async (req, res) => {
 module.exports = {
   getSubjects,
   createSubject,
+  updateSubject,
   deleteSubject
 };
