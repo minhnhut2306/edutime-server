@@ -1,13 +1,16 @@
 const Class = require("../models/classesModel");
 const SchoolYear = require("../models/schoolYearModel");
+const Teacher = require("../models/teacherModel");
+const TeachingRecords = require("../models/teachingRecordsModel");
+
 const XLSX = require("xlsx");
 
 const normalizeClassName = (name) => {
   if (!name) return null;
-  
-  const normalized = name.toString().trim().replace(/\s+/g, '').toUpperCase();
+
+  const normalized = name.toString().trim().replace(/\s+/g, "").toUpperCase();
   const match = normalized.match(/^(\d{1,2})([A-Z]\d{0,2})$/);
-  
+
   return match ? match[1] + match[2] : normalized;
 };
 
@@ -18,22 +21,28 @@ const extractGradeFromClassName = (className) => {
 };
 
 const getActiveSchoolYearId = async () => {
-  const activeYear = await SchoolYear.findOne({ status: 'active' });
+  const activeYear = await SchoolYear.findOne({ status: "active" });
   if (!activeYear) {
-    throw new Error('Không có năm học đang hoạt động. Vui lòng tạo năm học mới!');
+    throw new Error(
+      "Không có năm học đang hoạt động. Vui lòng tạo năm học mới!"
+    );
   }
   return activeYear._id;
 };
 
-const checkDuplicateClass = async (normalizedName, schoolYearId, excludeId = null) => {
-  const query = { 
-    name: normalizedName, 
+const checkDuplicateClass = async (
+  normalizedName,
+  schoolYearId,
+  excludeId = null
+) => {
+  const query = {
+    name: normalizedName,
     schoolYearId,
-    status: 'active' 
+    status: "active",
   };
-  
+
   if (excludeId) query._id = { $ne: excludeId };
-  
+
   const existingClass = await Class.findOne(query);
   if (existingClass) {
     throw new Error(`Lớp "${normalizedName}" đã tồn tại trong năm học này`);
@@ -41,13 +50,15 @@ const checkDuplicateClass = async (normalizedName, schoolYearId, excludeId = nul
 };
 
 const getRowValue = (row, fieldName) => {
-  const key = Object.keys(row).find(k => k.toLowerCase() === fieldName.toLowerCase());
+  const key = Object.keys(row).find(
+    (k) => k.toLowerCase() === fieldName.toLowerCase()
+  );
   return key ? row[key] : null;
 };
 
 const getClasses = async (filters = {}) => {
-  const schoolYearId = filters.schoolYearId || await getActiveSchoolYearId();
-  
+  const schoolYearId = filters.schoolYearId || (await getActiveSchoolYearId());
+
   const query = { schoolYearId };
 
   if (filters.name) {
@@ -86,7 +97,9 @@ const createClass = async (data) => {
   if (!finalGrade) {
     const extractedGrade = extractGradeFromClassName(normalizedName);
     if (!extractedGrade) {
-      throw new Error("Không thể xác định khối từ tên lớp. Vui lòng nhập khối hoặc đặt tên lớp theo định dạng: 10A1, 11B2, 6C,...");
+      throw new Error(
+        "Không thể xác định khối từ tên lớp. Vui lòng nhập khối hoặc đặt tên lớp theo định dạng: 10A1, 11B2, 6C,..."
+      );
     }
     finalGrade = extractedGrade;
   }
@@ -98,7 +111,7 @@ const createClass = async (data) => {
     grade: finalGrade.toString().trim(),
     studentCount: studentCount ? parseInt(studentCount) : 0,
     schoolYearId,
-    status: 'active'
+    status: "active",
   });
 };
 
@@ -110,16 +123,16 @@ const updateClass = async (id, data) => {
 
   if (data.name) {
     const normalizedName = normalizeClassName(data.name);
-    
+
     if (!normalizedName) {
       throw new Error("Tên lớp không hợp lệ sau khi chuẩn hóa");
     }
 
     if (normalizedName !== classInfo.name) {
       await checkDuplicateClass(normalizedName, classInfo.schoolYearId, id);
-      
+
       data.name = normalizedName;
-      
+
       if (!data.grade) {
         const extractedGrade = extractGradeFromClassName(normalizedName);
         if (extractedGrade) {
@@ -145,6 +158,20 @@ const deleteClass = async (id) => {
 
   const classInfo = await Class.findById(id);
   if (!classInfo) throw new Error("Không tìm thấy lớp học");
+
+  const teacherWithMainClass = await Teacher.findOne({ mainClassId: id });
+  if (teacherWithMainClass) {
+    throw new Error(
+      `Không thể xóa lớp "${classInfo.name}" vì đang có giáo viên "${teacherWithMainClass.name}" làm chủ nhiệm. Vui lòng bỏ chủ nhiệm trước khi xóa lớp.`
+    );
+  }
+
+  const teachingRecordsCount = await TeachingRecords.countDocuments({ classId: id });
+  if (teachingRecordsCount > 0) {
+    throw new Error(
+      `Không thể xóa lớp "${classInfo.name}" vì có ${teachingRecordsCount} bản ghi giảng dạy liên quan. Vui lòng xóa các bản ghi giảng dạy trước.`
+    );
+  }
 
   await Class.findByIdAndDelete(id);
 
@@ -174,20 +201,26 @@ const processImportRow = async (row, rowNumber, schoolYearId) => {
   if (!grade) {
     const extractedGrade = extractGradeFromClassName(normalizedName);
     if (!extractedGrade) {
-      throw new Error(`Không thể xác định khối từ tên lớp "${normalizedName}". Vui lòng nhập khối hoặc đặt tên theo định dạng: 10A1, 11B2,...`);
+      throw new Error(
+        `Không thể xác định khối từ tên lớp "${normalizedName}". Vui lòng nhập khối hoặc đặt tên theo định dạng: 10A1, 11B2,...`
+      );
     }
     grade = extractedGrade;
   }
 
-  const existingClass = await Class.findOne({ 
-    name: normalizedName, 
+  const existingClass = await Class.findOne({
+    name: normalizedName,
     schoolYearId,
-    status: 'active' 
+    status: "active",
   });
-  
+
   if (existingClass) {
     const schoolYear = await SchoolYear.findById(schoolYearId);
-    throw new Error(`Tên lớp "${normalizedName}" đã tồn tại trong năm học ${schoolYear?.year || 'hiện tại'}`);
+    throw new Error(
+      `Tên lớp "${normalizedName}" đã tồn tại trong năm học ${
+        schoolYear?.year || "hiện tại"
+      }`
+    );
   }
 
   const classInfo = await Class.create({
@@ -195,14 +228,14 @@ const processImportRow = async (row, rowNumber, schoolYearId) => {
     grade: grade.toString().trim(),
     studentCount: studentCount ? parseInt(studentCount) : 0,
     schoolYearId,
-    status: 'active'
+    status: "active",
   });
 
   return {
     row: rowNumber,
     class: classInfo,
     originalName: name,
-    normalizedName: normalizedName
+    normalizedName: normalizedName,
   };
 };
 
@@ -222,7 +255,7 @@ const importClasses = async (file) => {
 
   const results = {
     success: [],
-    failed: []
+    failed: [],
   };
 
   for (let i = 0; i < data.length; i++) {
@@ -236,7 +269,7 @@ const importClasses = async (file) => {
       results.failed.push({
         row: rowNumber,
         data: row,
-        reason: error.message
+        reason: error.message,
       });
     }
   }
@@ -246,7 +279,7 @@ const importClasses = async (file) => {
     successCount: results.success.length,
     failedCount: results.failed.length,
     success: results.success,
-    failed: results.failed
+    failed: results.failed,
   };
 };
 
@@ -257,5 +290,5 @@ module.exports = {
   updateClass,
   deleteClass,
   importClasses,
-  normalizeClassName
+  normalizeClassName,
 };

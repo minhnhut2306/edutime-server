@@ -2,6 +2,7 @@ const User = require("../models/userModel");
 const Token = require("../models/tokenModel");
 const crypto = require("crypto");
 const validator = require("../validations/authen.validation");
+const Teacher = require("../models/teacherModel");
 
 const TOKEN_EXPIRY_DAYS = 7;
 
@@ -9,7 +10,7 @@ const normalizeEmail = (email) => email?.toLowerCase().trim();
 
 const generateToken = () => ({
   token: crypto.randomBytes(32).toString("hex"),
-  expiresAt: new Date(Date.now() + TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
+  expiresAt: new Date(Date.now() + TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
 });
 
 const createTokenRecord = async (userId) => {
@@ -85,7 +86,7 @@ const verifyToken = async (token) => {
 
 const refreshToken = async (token) => {
   const tokenData = await validateToken(token);
-  
+
   await Token.deleteOne({ token });
   const newToken = await createTokenRecord(tokenData.userId);
 
@@ -138,6 +139,13 @@ const deleteUser = async (userId) => {
   const user = await User.findById(userId);
   if (!user) throw new Error("Người dùng không tồn tại");
 
+  const teacherCount = await Teacher.countDocuments({ userId: userId });
+  if (teacherCount > 0) {
+    throw new Error(
+      `Không thể xóa tài khoản "${user.email}" vì đang được liên kết với ${teacherCount} giáo viên. Vui lòng bỏ liên kết giáo viên trước.`
+    );
+  }
+
   await Token.deleteMany({ userId: user._id });
   await User.findByIdAndDelete(userId);
 
@@ -174,7 +182,7 @@ module.exports = {
   getUser,
   getAllUsers,
   updateUserRole,
-  deleteUserById, 
+  deleteUserById,
   changePassword,
-  deleteUser
+  deleteUser,
 };

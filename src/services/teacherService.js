@@ -1,6 +1,6 @@
 const Teacher = require("../models/teacherModel");
 const User = require("../models/userModel");
-const Subject = require("../models/subjectModel");
+const TeachingRecords = require("../models/teachingRecordsModel");
 const Class = require("../models/classesModel");
 const SchoolYear = require("../models/schoolYearModel");
 const { findSubjectByNameFlexible } = require("./subjectService");
@@ -258,11 +258,19 @@ const updateTeacherUserId = async (teacherId, userId) => {
 };
 
 const deleteTeacher = async (id) => {
-  const teacher = await Teacher.findByIdAndDelete(id);
-
+  const teacher = await Teacher.findById(id);
   if (!teacher) {
     throw new Error("Không tìm thấy giáo viên");
   }
+
+  const teachingRecordsCount = await TeachingRecords.countDocuments({ teacherId: id });
+  if (teachingRecordsCount > 0) {
+    throw new Error(
+      `Không thể xóa giáo viên "${teacher.name}" vì có ${teachingRecordsCount} bản ghi giảng dạy. Vui lòng xóa các bản ghi giảng dạy trước.`
+    );
+  }
+
+  await Teacher.findByIdAndDelete(id);
 
   return {
     message: "Xóa giáo viên thành công",

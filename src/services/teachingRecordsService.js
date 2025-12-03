@@ -3,6 +3,7 @@ const Teacher = require("../models/teacherModel");
 const Week = require("../models/weekModel");
 const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
+const TeachingRecords = require("../models/teachingRecordsModel");
 const mongoose = require('mongoose');
 
 const POPULATE_OPTIONS = [
