@@ -3,7 +3,6 @@ const Teacher = require("../models/teacherModel");
 const Week = require("../models/weekModel");
 const Subject = require("../models/subjectModel");
 const Class = require("../models/classesModel");
-const TeachingRecords = require("../models/teachingRecordsModel");
 const mongoose = require('mongoose');
 
 const POPULATE_OPTIONS = [
@@ -13,12 +12,30 @@ const POPULATE_OPTIONS = [
   { path: "classId", select: "name grade studentCount" }
 ];
 
-const PERIODS_MIN = 1;
-const PERIODS_MAX = 20;
+const MAX_PERIODS_PER_WEEK = 20;
 
 const validatePeriods = (periods) => {
-  if (periods !== undefined && (periods < PERIODS_MIN || periods > PERIODS_MAX)) {
-    throw new Error(`Số tiết phải từ ${PERIODS_MIN} đến ${PERIODS_MAX}`);
+  if (periods !== undefined && (periods < 1 || periods > MAX_PERIODS_PER_WEEK)) {
+    throw new Error(`Tổng số tiết không được vượt quá ${MAX_PERIODS_PER_WEEK}`);
+  }
+};
+
+const checkWeekPeriodLimit = async (teacherId, weekId, newPeriods, excludeRecordId = null) => {
+  const query = { teacherId, weekId };
+  if (excludeRecordId) {
+    query._id = { $ne: excludeRecordId };
+  }
+
+  const existingRecords = await TeachingRecords.find(query);
+  const totalExistingPeriods = existingRecords.reduce((sum, record) => sum + (record.periods || 0), 0);
+  const totalPeriods = totalExistingPeriods + newPeriods;
+
+  if (totalPeriods > MAX_PERIODS_PER_WEEK) {
+    throw new Error(
+      `Tổng số tiết trong tuần này đã đạt ${totalExistingPeriods}. ` +
+      `Thêm ${newPeriods} tiết sẽ vượt quá giới hạn ${MAX_PERIODS_PER_WEEK} tiết/tuần. ` +
+      `Bạn chỉ có thể thêm tối đa ${MAX_PERIODS_PER_WEEK - totalExistingPeriods} tiết nữa.`
+    );
   }
 };
 
@@ -34,13 +51,13 @@ const validateTeacherGrade = (teacher, classGrade) => {
   }
 };
 
-const checkDuplicateRecord = async (teacherId, weekId, subjectId, classId, excludeId = null) => {
-  const query = { teacherId, weekId, subjectId, classId };
+const checkDuplicateRecord = async (teacherId, weekId, subjectId, classId, excludeId = null) => {   
+  const query = { teacherId, weekId, classId };
   if (excludeId) query._id = { $ne: excludeId };
   
   const existing = await TeachingRecords.findOne(query);
   if (existing) {
-    throw new Error("Bản ghi này đã tồn tại (cùng tuần, môn học và lớp)");
+    throw new Error("Bạn đã có bản ghi cho lớp này trong tuần học này rồi");
   }
 };
 
@@ -84,7 +101,7 @@ const getTeachingRecordsByTeacher = async (teacherId, schoolYearId = null) => {
       return {
         success: false,
         statusCode: 400,
-        message: `teacherId không hợp lệ: ${teacherId}`
+        message: "Không tìm thấy thông tin giáo viên"
       };
     }
 
@@ -135,6 +152,8 @@ const createTeachingRecord = async (data) => {
 
     validateTeacherGrade(teacher, classData.grade);
 
+    await checkWeekPeriodLimit(teacherId, weekId, periods);
+
     await checkDuplicateRecord(teacherId, weekId, subjectId, classId);
 
     const newRecord = await TeachingRecords.create({
@@ -156,7 +175,8 @@ const createTeachingRecord = async (data) => {
   } catch (err) {
     const statusCode = err.message.includes("không tìm thấy") ? 404 :
                       err.message.includes("không có quyền") ? 403 :
-                      err.message.includes("đã tồn tại") ? 409 : 400;
+                      err.message.includes("đã tồn tại") ? 409 :
+                      err.message.includes("vượt quá giới hạn") || err.message.includes("Tổng số tiết") ? 400 : 400;
     return { success: false, statusCode, message: err.message };
   }
 };
@@ -194,16 +214,21 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
     validatePeriods(periods);
 
     const targetTeacherId = teacherId || record.teacherId;
+    const targetWeekId = weekId || record.weekId;
     const targetClassId = classId || record.classId;
 
     const { teacher, classData } = await validateEntities(
       targetTeacherId,
-      weekId || record.weekId,
+      targetWeekId,
       subjectId || record.subjectId,
       targetClassId
     );
 
     validateTeacherGrade(teacher, classData.grade);
+
+    if (periods !== undefined) {
+      await checkWeekPeriodLimit(targetTeacherId, targetWeekId, periods, recordId);
+    }
 
     await checkDuplicateRecord(
       teacherId || record.teacherId,
@@ -232,7 +257,8 @@ const updateTeachingRecord = async (recordId, data, currentTeacherId) => {
   } catch (err) {
     const statusCode = err.message.includes("không tìm thấy") ? 404 :
                       err.message.includes("không có quyền") || err.message.includes("chỉ có quyền") ? 403 :
-                      err.message.includes("đã tồn tại") ? 409 : 400;
+                      err.message.includes("đã tồn tại") ? 409 :
+                      err.message.includes("vượt quá giới hạn") || err.message.includes("Tổng số tiết") ? 400 : 400;
     return { success: false, statusCode, message: err.message };
   }
 };

@@ -53,7 +53,7 @@ const updateWeek = asyncHandler(async (req, res) => {
 
   if (!MONGODB_ID_PATTERN.test(id)) {
     return res.status(400).json(
-      badRequestResponse("ID tuần học không hợp lệ")
+      badRequestResponse("Không tìm thấy tuần học cần cập nhật. Vui lòng thử lại")
     );
   }
 
@@ -75,7 +75,7 @@ const deleteWeek = asyncHandler(async (req, res) => {
 
   if (!MONGODB_ID_PATTERN.test(id)) {
     return res.status(400).json(
-      badRequestResponse("ID tuần học không hợp lệ")
+      badRequestResponse("Không tìm thấy tuần học cần xóa. Vui lòng thử lại")
     );
   }
 

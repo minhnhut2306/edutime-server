@@ -114,7 +114,7 @@ const createTeachingRecord = asyncHandler(async (req, res) => {
 
   if (periods < 1 || periods > 20) {
     return res.status(400).json(
-      badRequestResponse("Số tiết phải từ 1 đến 20")
+      badRequestResponse("Mỗi bản ghi số tiết phải từ 1 đến 20")
     );
   }
 
@@ -148,7 +148,7 @@ const deleteTeachingRecord = asyncHandler(async (req, res) => {
 
   if (!id) {
     return res.status(400).json(
-      badRequestResponse("ID không hợp lệ")
+      badRequestResponse("Không tìm thấy bản ghi cần xóa")
     );
   }
 
@@ -181,7 +181,7 @@ const updateTeachingRecord = asyncHandler(async (req, res) => {
 
   if (!id) {
     return res.status(400).json(
-      badRequestResponse("ID không hợp lệ")
+      badRequestResponse("Không tìm thấy bản ghi cần cập nhật")
     );
   }
 
