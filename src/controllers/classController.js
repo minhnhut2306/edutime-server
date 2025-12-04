@@ -20,18 +20,40 @@ const getSchoolYearId = async (schoolYearString) => {
 const getClasses = asyncHandler(async (req, res) => {
   const schoolYearId = await getSchoolYearId(req.query.schoolYear);
   
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  
   const filters = {
     name: req.query.name,
     grade: req.query.grade,
     schoolYearId
   };
 
-  const classes = await classService.getClasses(filters);
+  const result = await classService.getClasses(filters, page, limit);
   
   res.json(
     successResponse("Lấy danh sách lớp học thành công", {
-      classes,
-      total: classes.length
+      classes: result.classes,
+      pagination: {
+        currentPage: result.currentPage,
+        totalPages: result.totalPages,
+        totalItems: result.totalItems,
+        itemsPerPage: result.itemsPerPage,
+        hasNextPage: result.hasNextPage,
+        hasPrevPage: result.hasPrevPage
+      }
+    })
+  );
+});
+
+const getAvailableGrades = asyncHandler(async (req, res) => {
+  const schoolYearId = await getSchoolYearId(req.query.schoolYear);
+  
+  const grades = await classService.getAvailableGrades(schoolYearId);
+  
+  res.json(
+    successResponse("Lấy danh sách khối thành công", {
+      grades
     })
   );
 });
@@ -121,6 +143,7 @@ const importClasses = asyncHandler(async (req, res) => {
 
 module.exports = {
   getClasses,
+  getAvailableGrades,
   getClassById,
   createClass,
   updateClass,

@@ -42,12 +42,13 @@ router.delete("/teachers/:id", authMiddleware, teacherController.deleteTeacher);
 router.put("/teachers/:id/user", authMiddleware, teacherController.updateTeacherUserId);
 router.post("/teachers/import", authMiddleware, upload.single("file"), teacherController.importTeachers);
 
+router.get("/classes/grades", authMiddleware, classController.getAvailableGrades);
+router.post("/classes/import", authMiddleware, upload.single("file"), classController.importClasses);
 router.get("/classes", authMiddleware, classController.getClasses);
 router.get("/classes/:id", authMiddleware, classController.getClassById);
 router.post("/classes", authMiddleware, classController.createClass);
 router.put("/classes/:id", authMiddleware, classController.updateClass);
 router.delete("/classes/:id", authMiddleware, classController.deleteClass);
-router.post("/classes/import", authMiddleware, upload.single("file"), classController.importClasses);
 
 router.get("/subjects", authMiddleware, subjectController.getSubjects);
 router.post("/subjects", authMiddleware, subjectController.createSubject);

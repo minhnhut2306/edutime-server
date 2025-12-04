@@ -56,7 +56,7 @@ const getRowValue = (row, fieldName) => {
   return key ? row[key] : null;
 };
 
-const getClasses = async (filters = {}) => {
+const getClasses = async (filters = {}, page = 1, limit = 10) => {
   const schoolYearId = filters.schoolYearId || (await getActiveSchoolYearId());
 
   const query = { schoolYearId };
@@ -70,7 +70,49 @@ const getClasses = async (filters = {}) => {
     query.grade = filters.grade;
   }
 
-  return await Class.find(query).sort({ createdAt: -1 });
+  const skip = (page - 1) * limit;
+
+  const totalItems = await Class.countDocuments(query);
+
+  const classes = await Class.find(query)
+    .sort({ grade: 1, name: 1 })
+    .skip(skip)
+    .limit(limit);
+
+  const totalPages = Math.ceil(totalItems / limit);
+
+  return {
+    classes,
+    currentPage: page,
+    totalPages,
+    totalItems,
+    itemsPerPage: limit,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1
+  };
+};
+
+const getAvailableGrades = async (schoolYearId = null) => {
+  const finalSchoolYearId = schoolYearId || (await getActiveSchoolYearId());
+
+  const grades = await Class.aggregate([
+    {
+      $match: {
+        schoolYearId: finalSchoolYearId,
+        status: "active"
+      }
+    },
+    {
+      $group: {
+        _id: "$grade"
+      },
+    },
+    {
+      $sort: { _id: 1 }
+    },
+  ]);
+
+  return grades.map(g => g._id).filter(Boolean);
 };
 
 const getClassById = async (id) => {
@@ -285,6 +327,7 @@ const importClasses = async (file) => {
 
 module.exports = {
   getClasses,
+  getAvailableGrades,
   getClassById,
   createClass,
   updateClass,
