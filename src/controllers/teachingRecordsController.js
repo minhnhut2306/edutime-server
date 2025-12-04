@@ -57,22 +57,51 @@ const getTeachers = async (userId) => {
 };
 
 const getTeachingRecords = asyncHandler(async (req, res) => {
-  const { teacherId: queryTeacherId, schoolYear: querySchoolYear } = req.query;
+  const { 
+    teacherId: queryTeacherId, 
+    schoolYear: querySchoolYear,
+    weekId,
+    classId,
+    subjectId,
+    recordType,
+    semester,
+    page = 1,
+    limit = 10
+  } = req.query;
+
   const role = req.user?.role;
   const userId = getUserId(req.user);
 
   const schoolYearId = await getSchoolYearId(querySchoolYear);
 
+  const filters = {
+    schoolYearId,
+    weekId,
+    classId,
+    subjectId,
+    recordType,
+    semester
+  };
+
+  const pagination = {
+    page: parseInt(page, 10),
+    limit: parseInt(limit, 10)
+  };
+
   if (role === "admin") {
     if (queryTeacherId) {
       const result = await teachingRecordsService.getTeachingRecordsByTeacher(
         queryTeacherId,
-        schoolYearId
+        filters,
+        pagination
       );
       return handleServiceResult(result, res, "Lấy danh sách bản ghi thành công");
-    }
+    }   
 
-    const resultAll = await teachingRecordsService.getAllTeachingRecords(schoolYearId);
+    const resultAll = await teachingRecordsService.getAllTeachingRecords(
+      filters,
+      pagination
+    );
     return handleServiceResult(resultAll, res, "Lấy danh sách bản ghi thành công");
   }
 
@@ -86,7 +115,8 @@ const getTeachingRecords = asyncHandler(async (req, res) => {
 
   const result = await teachingRecordsService.getTeachingRecordsByTeacher(
     teacher._id.toString(),
-    schoolYearId
+    filters,
+    pagination
   );
 
   return handleServiceResult(result, res, "Lấy danh sách bản ghi thành công");

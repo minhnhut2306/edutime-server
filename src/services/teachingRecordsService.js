@@ -77,24 +77,107 @@ const validateEntities = async (teacherId, weekId, subjectId, classId) => {
   return { teacher, week, subject, classData };
 };
 
-const getAllTeachingRecords = async (schoolYearId = null) => {
+// Build query filters
+const buildQueryFilters = (filters = {}) => {
+  const query = {};
+  
+  if (filters.schoolYearId) {
+    query.schoolYearId = filters.schoolYearId;
+  }
+  
+  if (filters.weekId) {
+    query.weekId = filters.weekId;
+  }
+  
+  if (filters.classId) {
+    query.classId = filters.classId;
+  }
+  
+  if (filters.subjectId) {
+    query.subjectId = filters.subjectId;
+  }
+  
+  if (filters.recordType) {
+    query.recordType = filters.recordType;
+  }
+  
+  // Filter by semester based on week number
+  if (filters.semester && filters.schoolYearId) {
+    // Get weeks in the semester range
+    const semesterMap = {
+      '1': { start: 1, end: 18 },    // Học kì 1: tuần 1-18
+      '2': { start: 19, end: 36 }    // Học kì 2: tuần 19-36
+    };
+    
+    const range = semesterMap[filters.semester];
+    if (range) {
+      query['weekId'] = {
+        $in: [] // Will be populated with week IDs
+      };
+      // This will be handled differently - need to fetch weeks first
+    }
+  }
+  
+  return query;
+};
+
+const getAllTeachingRecords = async (filters = {}, pagination = { page: 1, limit: 10 }) => {
   try {
-    const query = schoolYearId ? { schoolYearId } : {};
+    const query = buildQueryFilters(filters);
+    
+    // Handle semester filter
+    if (filters.semester && filters.schoolYearId) {
+      const semesterMap = {
+        '1': { start: 1, end: 18 },
+        '2': { start: 19, end: 36 }
+      };
+      
+      const range = semesterMap[filters.semester];
+      if (range) {
+        const weeks = await Week.find({
+          schoolYearId: filters.schoolYearId,
+          weekNumber: { $gte: range.start, $lte: range.end }
+        }).select('_id');
+        
+        const weekIds = weeks.map(w => w._id);
+        query.weekId = { $in: weekIds };
+      }
+    }
 
-    const records = await TeachingRecords.find(query)
-      .populate(POPULATE_OPTIONS)
-      .sort({ createdAt: -1 });
+    const page = parseInt(pagination.page, 10) || 1;
+    const limit = parseInt(pagination.limit, 10) || 10;
+    const skip = (page - 1) * limit;
 
-    return { success: true, data: records };
+    const [records, total] = await Promise.all([
+      TeachingRecords.find(query)
+        .populate(POPULATE_OPTIONS)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      TeachingRecords.countDocuments(query)
+    ]);
+
+    return { 
+      success: true, 
+      data: {
+        records,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      }
+    };
   } catch (err) {
     return { success: false, message: err.message };
   }
 };
 
-const getTeachingRecordsByTeacher = async (teacherId, schoolYearId = null) => {
+const getTeachingRecordsByTeacher = async (teacherId, filters = {}, pagination = { page: 1, limit: 10 }) => {
   try {
     if (!teacherId) {
-      return { success: true, data: [], total: 0 };
+      return { success: true, data: { records: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 0 } } };
     }
 
     if (!mongoose.Types.ObjectId.isValid(teacherId)) {
@@ -114,14 +197,52 @@ const getTeachingRecordsByTeacher = async (teacherId, schoolYearId = null) => {
       };
     }
     
-    const query = { teacherId };
-    if (schoolYearId) query.schoolYearId = schoolYearId;
+    const query = { teacherId, ...buildQueryFilters(filters) };
+    
+    // Handle semester filter
+    if (filters.semester && filters.schoolYearId) {
+      const semesterMap = {
+        '1': { start: 1, end: 18 },
+        '2': { start: 19, end: 36 }
+      };
+      
+      const range = semesterMap[filters.semester];
+      if (range) {
+        const weeks = await Week.find({
+          schoolYearId: filters.schoolYearId,
+          weekNumber: { $gte: range.start, $lte: range.end }
+        }).select('_id');
+        
+        const weekIds = weeks.map(w => w._id);
+        query.weekId = { $in: weekIds };
+      }
+    }
 
-    const records = await TeachingRecords.find(query)
-      .populate(POPULATE_OPTIONS)
-      .sort({ createdAt: -1 });
+    const page = parseInt(pagination.page, 10) || 1;
+    const limit = parseInt(pagination.limit, 10) || 10;
+    const skip = (page - 1) * limit;
 
-    return { success: true, data: records, total: records.length };
+    const [records, total] = await Promise.all([
+      TeachingRecords.find(query)
+        .populate(POPULATE_OPTIONS)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      TeachingRecords.countDocuments(query)
+    ]);
+
+    return { 
+      success: true, 
+      data: {
+        records,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      }
+    };
   } catch (err) {
     return { success: false, message: err.message };
   }
