@@ -137,8 +137,12 @@ const changePassword = async (userId, newPassword) => {
   await user.save();
   await Token.deleteMany({ userId: user._id });
 
-  // Gửi email thông báo
-  await sendPasswordChangeNotification(user.email);
+  // Gửi email thông báo (không throw error nếu thất bại)
+  try {
+    await sendPasswordChangeNotification(user.email);
+  } catch (emailError) {
+    console.warn("⚠️ Không thể gửi email thông báo:", emailError.message);
+  }
 
   return { message: "Đổi mật khẩu thành công" };
 };
@@ -168,8 +172,12 @@ const changePasswordWithOld = async (userId, oldPassword, newPassword) => {
   await user.save();
   await Token.deleteMany({ userId: user._id });
 
-  // Gửi email thông báo
-  await sendPasswordChangeNotification(user.email);
+  // Gửi email thông báo (không throw error nếu thất bại)
+  try {
+    await sendPasswordChangeNotification(user.email);
+  } catch (emailError) {
+    console.warn("⚠️ Không thể gửi email thông báo:", emailError.message);
+  }
 
   return { message: "Đổi mật khẩu thành công" };
 };
@@ -202,7 +210,12 @@ const sendOTP = async (email) => {
   });
 
   // Gửi OTP qua email
-  await sendOTPEmail(normalizedEmail, otp);
+  try {
+    await sendOTPEmail(normalizedEmail, otp);
+  } catch (emailError) {
+    console.error("❌ Lỗi gửi email OTP:", emailError.message);
+    throw new Error("Không thể gửi email. Vui lòng kiểm tra cấu hình email trong .env");
+  }
 
   return { message: "Mã OTP đã được gửi đến email của bạn" };
 };
@@ -274,8 +287,12 @@ const resetPassword = async (email, otp, newPassword) => {
   // Xóa OTP đã sử dụng
   await OTP.deleteMany({ email: normalizedEmail });
 
-  // Gửi email thông báo
-  await sendPasswordChangeNotification(user.email);
+  // Gửi email thông báo (không throw error nếu thất bại)
+  try {
+    await sendPasswordChangeNotification(user.email);
+  } catch (emailError) {
+    console.warn("⚠️ Không thể gửi email thông báo:", emailError.message);
+  }
 
   return { message: "Đặt lại mật khẩu thành công" };
 };
