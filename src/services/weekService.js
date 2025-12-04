@@ -44,7 +44,7 @@ const getNextWeekNumber = async (schoolYearId) => {
   return lastWeek ? lastWeek.weekNumber + 1 : 1;
 };
 
-const getWeeks = async (filters = {}) => {
+const getWeeks = async (filters = {}, page = 1, limit = 10) => {
   const schoolYearId = filters.schoolYearId || await getActiveSchoolYearId();
   
   const query = { schoolYearId };
@@ -53,7 +53,26 @@ const getWeeks = async (filters = {}) => {
     query.weekNumber = filters.weekNumber;
   }
 
-  return await Week.find(query).sort({ weekNumber: 1 });
+  const skip = (page - 1) * limit;
+
+  const totalItems = await Week.countDocuments(query);
+
+  const weeks = await Week.find(query)
+    .sort({ startDate: 1 })
+    .skip(skip)
+    .limit(limit);
+  
+  const totalPages = Math.ceil(totalItems / limit);
+
+  return {
+    weeks,
+    currentPage: page,
+    totalPages,
+    totalItems,
+    itemsPerPage: limit,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1
+  };
 };
 
 const createWeek = async (data) => {

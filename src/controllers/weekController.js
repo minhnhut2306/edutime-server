@@ -22,12 +22,25 @@ const getSchoolYearId = async (schoolYearString) => {
 const getWeeks = asyncHandler(async (req, res) => {
   const schoolYearId = await getSchoolYearId(req.query.schoolYear);
 
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+
   const filters = { schoolYearId };
   
-  const weeks = await weekService.getWeeks(filters);
+  const result = await weekService.getWeeks(filters, page, limit);
   
   return res.json(
-    successResponse("Lấy danh sách tuần học thành công", { weeks })
+    successResponse("Lấy danh sách tuần học thành công", {
+      weeks: result.weeks,
+      pagination: {
+        currentPage: result.currentPage,
+        totalPages: result.totalPages,
+        totalItems: result.totalItems,
+        itemsPerPage: result.itemsPerPage,
+        hasNextPage: result.hasNextPage,
+        hasPrevPage: result.hasPrevPage
+      }
+    })
   );
 });
 
