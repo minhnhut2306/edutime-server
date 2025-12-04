@@ -55,58 +55,62 @@ const setExcelHeaders = (res, fileName) => {
   res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(fileName)}"`);
 };
 
-// Hàm tạo tên file theo quy tắc:
-// TenGV_GIO-BIEN-CHE_(thang/tuan/HK/ca-nam)2025_2026.xlsx
+// TenGV_GIO-BIEN-CHE_(Thang/Tuan/HocKy/CaNam)2025_2026.xlsx
 const generateFileName = (teachers, type, params, schoolYearLabel) => {
-  let baseName = '';
-
-  // Tên giáo viên: 1 GV thì lấy tên GV, nhiều GV thì để TatCaGV
+  // 1 GV: lấy tên GV, nhiều GV: TatCaGV
+  let baseName;
   if (teachers && teachers.length === 1) {
     const teacherName = (teachers[0].name || 'GIAO-VIEN')
       .trim()
-      .replace(/\s+/g, '_');
+      .replace(/\s+/g, '_'); // đổi dấu cách thành _
     baseName = `${teacherName}_GIO-BIEN-CHE`;
   } else {
     baseName = `TatCaGV_GIO-BIEN-CHE`;
   }
 
-  // Nhãn phạm vi báo cáo (tháng / tuần / HK / cả năm)
+  // Nhãn phạm vi (trong ngoặc)
   let scopeLabel = '';
   if (type === 'bc') {
+    // tháng
     if (params.bcNumbers && params.bcNumbers.length > 0) {
       scopeLabel = `Thang${params.bcNumbers.join('-')}`;
     } else if (params.bcNumber) {
       scopeLabel = `Thang${params.bcNumber}`;
     } else {
-      scopeLabel = `TatCaThang`;
+      scopeLabel = `Thang`;
     }
   } else if (type === 'week') {
-    if (params.weekIds && params.weekIds.length > 0) {
-      scopeLabel = `${params.weekIds.length}Tuan`;
-    } else {
-      scopeLabel = `1Tuan`;
-    }
+    scopeLabel = 'Tuan';
   } else if (type === 'semester') {
-    scopeLabel = `HK${params.semester}`;
+    scopeLabel = `HocKy${params.semester}`;
   } else if (type === 'year') {
-    scopeLabel = `CaNam`;
+    scopeLabel = 'CaNam';
   }
 
-  // Chuẩn hóa năm học: "2025-2026" -> "2025_2026"
+  // Năm học: "2025-2026" -> "2025_2026"
   const normalizedSchoolYear = (schoolYearLabel || 'NAMHOC')
     .toString()
     .replace(/\s+/g, '')
     .replace(/-/g, '_');
 
-  // Ghép tên cuối cùng theo dạng:
-  // TenGV_GIO-BIEN-CHE_(Thang/Tuan/HK/CaNam)2025_2026.xlsx
+  // Ghép tên: TenGV_GIO-BIEN-CHE_(scope)2025_2026.xlsx
   let fileName = baseName;
   if (scopeLabel) {
     fileName += `_(${scopeLabel})`;
   }
   fileName += `_${normalizedSchoolYear}`;
 
-  return fileName + '.xlsx';
+  const finalName = fileName + '.xlsx';
+
+  // Log để kiểm tra cấu trúc tên file khi xuất Excel
+  console.log('[EXPORT EXCEL] fileName:', finalName, {
+    type,
+    params,
+    schoolYearLabel: schoolYearLabel,
+    normalizedSchoolYear,
+  });
+
+  return finalName;
 };
 
 const getTeacherReport = asyncHandler(async (req, res) => {
