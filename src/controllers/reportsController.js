@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const reportsService = require("../services/reportsService");
 const asyncHandler = require("../middleware/asyncHandler");
 const SchoolYear = require("../models/schoolYearModel");
+const Teacher = require("../models/teacherModel");
 const {
   successResponse,
   notFoundResponse,
@@ -54,6 +55,44 @@ const setExcelHeaders = (res, fileName) => {
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 };
 
+const generateFileName = (teachers, type, params, schoolYearLabel) => {
+  let fileName = '';
+  
+  // Tên giáo viên
+  if (teachers.length === 1) {
+    const teacherName = teachers[0].name.replace(/\s+/g, '_');
+    fileName = `${teacherName}_GIO-BIEN-CHE`;
+  } else {
+    fileName = `${teachers.length}GV_GIO-BIEN-CHE`;
+  }
+  
+  // Loại báo cáo
+  if (type === 'bc') {
+    if (params.bcNumbers && params.bcNumbers.length > 0) {
+      fileName += `_Thang${params.bcNumbers.join('-')}`;
+    } else if (params.bcNumber) {
+      fileName += `_Thang${params.bcNumber}`;
+    } else {
+      fileName += `_TatCaThang`;
+    }
+  } else if (type === 'week') {
+    if (params.weekIds && params.weekIds.length > 0) {
+      fileName += `_${params.weekIds.length}Tuan`;
+    } else {
+      fileName += `_1Tuan`;
+    }
+  } else if (type === 'semester') {
+    fileName += `_HK${params.semester}`;
+  } else if (type === 'year') {
+    fileName += `_CaNam`;
+  }
+  
+  // Năm học
+  fileName += `_${schoolYearLabel}`;
+  
+  return fileName + '.xlsx';
+};
+
 const getTeacherReport = asyncHandler(async (req, res) => {
   const { id: teacherId } = req.params;
   const { type = 'year', schoolYearId, month, weekId, semester, bcNumber } = req.query;
@@ -82,7 +121,7 @@ const getTeacherReport = asyncHandler(async (req, res) => {
 });
 
 const exportReport = asyncHandler(async (req, res) => {
-  let { teacherId, teacherIds, schoolYearId, schoolYear, type = 'bc', bcNumber, weekId, weekIds, semester } = req.query;
+  let { teacherId, teacherIds, schoolYearId, schoolYear, type = 'bc', bcNumber, bcNumbers, weekId, weekIds, semester } = req.query;
 
   const resolvedSchoolYearId = await resolveSchoolYearId(schoolYearId, schoolYear);
 
@@ -107,7 +146,15 @@ const exportReport = asyncHandler(async (req, res) => {
   }
 
   const options = { type, schoolYearId: resolvedSchoolYearId };
-  if (bcNumber) options.bcNumber = parseInt(bcNumber);
+  
+  // Xử lý tham số BC (có thể nhiều tháng)
+  if (bcNumbers) {
+    const parsed = parseArrayParam(bcNumbers);
+    options.bcNumbers = parsed ? parsed.map(n => parseInt(n)) : null;
+  } else if (bcNumber) {
+    options.bcNumber = parseInt(bcNumber);
+  }
+  
   if (weekId) options.weekId = weekId;
   if (weekIds) options.weekIds = parseArrayParam(weekIds);
   if (semester) options.semester = parseInt(semester);
@@ -122,7 +169,16 @@ const exportReport = asyncHandler(async (req, res) => {
     return res.status(statusCode).json(serverErrorResponse(result.message));
   }
 
-  const fileName = result.data?.fileName || `BaoCao_${result.data?.schoolYearLabel || resolvedSchoolYearId}`;
+  // Lấy thông tin giáo viên để đặt tên file
+  const teachers = await Teacher.find({ _id: { $in: targetTeacherIds } }).select('name');
+  
+  const fileName = generateFileName(
+    teachers, 
+    type, 
+    { bcNumber, bcNumbers: options.bcNumbers, weekIds: options.weekIds, semester },
+    result.data.schoolYearLabel
+  );
+  
   setExcelHeaders(res, fileName);
 
   await result.data.workbook.xlsx.write(res);
@@ -130,7 +186,7 @@ const exportReport = asyncHandler(async (req, res) => {
 });
 
 const exportMonthReport = asyncHandler(async (req, res) => {
-  const { teacherId, teacherIds, schoolYearId, schoolYear, month, bcNumber } = req.query;
+  const { teacherId, teacherIds, schoolYearId, schoolYear, month, bcNumber, bcNumbers } = req.query;
 
   const resolvedSchoolYearId = await resolveSchoolYearId(schoolYearId, schoolYear);
 
@@ -142,20 +198,43 @@ const exportMonthReport = asyncHandler(async (req, res) => {
 
   const targetIds = parseArrayParam(teacherIds) || teacherId;
 
-  if (!month && !bcNumber) {
+  if (!month && !bcNumber && !bcNumbers) {
     return res.status(STATUS_CODES.BAD_REQUEST).json(
-      badRequestResponse("month hoặc bcNumber là bắt buộc")
+      badRequestResponse("month, bcNumber hoặc bcNumbers là bắt buộc")
     );
   }
 
-  const bc = bcNumber ? parseInt(bcNumber) : parseInt(month);
-  const result = await reportsService.exportBCReport(targetIds, resolvedSchoolYearId, bc);
+  const options = { type: 'bc', schoolYearId: resolvedSchoolYearId };
+  
+  if (bcNumbers) {
+    const parsed = parseArrayParam(bcNumbers);
+    options.bcNumbers = parsed ? parsed.map(n => parseInt(n)) : null;
+  } else {
+    const bc = bcNumber ? parseInt(bcNumber) : parseInt(month);
+    options.bcNumber = bc;
+  }
+
+  const result = await reportsService.exportReport(
+    Array.isArray(targetIds) ? targetIds : [targetIds], 
+    resolvedSchoolYearId, 
+    options
+  );
 
   if (!result.success) {
     return handleServiceResult(result, res, "");
   }
 
-  const fileName = result.data?.fileName || `BC${bc}_${result.data?.schoolYearLabel || resolvedSchoolYearId}.xlsx`;
+  const teachers = await Teacher.find({ 
+    _id: { $in: Array.isArray(targetIds) ? targetIds : [targetIds] } 
+  }).select('name');
+  
+  const fileName = generateFileName(
+    teachers,
+    'bc',
+    { bcNumber: options.bcNumber, bcNumbers: options.bcNumbers },
+    result.data.schoolYearLabel
+  );
+  
   setExcelHeaders(res, fileName);
 
   await result.data.workbook.xlsx.write(res);
@@ -184,15 +263,28 @@ const exportWeekReport = asyncHandler(async (req, res) => {
     );
   }
 
-  const result = weekIds
-    ? await reportsService.exportWeekRangeReport(teacherId, parseArrayParam(weekIds), resolvedSchoolYearId)
-    : await reportsService.exportWeekReport(teacherId, weekId, resolvedSchoolYearId);
+  const options = { type: 'week' };
+  if (weekIds) {
+    options.weekIds = parseArrayParam(weekIds);
+  } else {
+    options.weekId = weekId;
+  }
+
+  const result = await reportsService.exportReport([teacherId], resolvedSchoolYearId, options);
 
   if (!result.success) {
     return handleServiceResult(result, res, "");
   }
 
-  const fileName = result.data?.fileName || `BaoCaoTuan_${result.data?.schoolYearLabel || resolvedSchoolYearId}.xlsx`;
+  const teachers = await Teacher.find({ _id: teacherId }).select('name');
+  
+  const fileName = generateFileName(
+    teachers,
+    'week',
+    { weekIds: options.weekIds },
+    result.data.schoolYearLabel
+  );
+  
   setExcelHeaders(res, fileName);
 
   await result.data.workbook.xlsx.write(res);
@@ -216,13 +308,25 @@ const exportSemesterReport = asyncHandler(async (req, res) => {
     );
   }
 
-  const result = await reportsService.exportSemesterReport(teacherId, resolvedSchoolYearId, parseInt(semester));
+  const result = await reportsService.exportReport(
+    [teacherId], 
+    resolvedSchoolYearId, 
+    { type: 'semester', semester: parseInt(semester) }
+  );
 
   if (!result.success) {
     return handleServiceResult(result, res, "");
   }
 
-  const fileName = result.data?.fileName || `HocKy${semester}_${result.data?.schoolYearLabel || resolvedSchoolYearId}.xlsx`;
+  const teachers = await Teacher.find({ _id: teacherId }).select('name');
+  
+  const fileName = generateFileName(
+    teachers,
+    'semester',
+    { semester: parseInt(semester) },
+    result.data.schoolYearLabel
+  );
+  
   setExcelHeaders(res, fileName);
 
   await result.data.workbook.xlsx.write(res);
@@ -246,15 +350,25 @@ const exportYearReport = asyncHandler(async (req, res) => {
     );
   }
 
-  const result = allBC === 'true' 
-    ? await reportsService.exportAllBCReport(teacherId, resolvedSchoolYearId)
-    : await reportsService.exportYearReport(teacherId, resolvedSchoolYearId);
+  const result = await reportsService.exportReport(
+    [teacherId], 
+    resolvedSchoolYearId, 
+    { type: 'year' }
+  );
 
   if (!result.success) {
     return handleServiceResult(result, res, "");
   }
 
-  const fileName = result.data?.fileName || `BaoCaoNam_${result.data?.schoolYearLabel || resolvedSchoolYearId}.xlsx`;
+  const teachers = await Teacher.find({ _id: teacherId }).select('name');
+  
+  const fileName = generateFileName(
+    teachers,
+    'year',
+    {},
+    result.data.schoolYearLabel
+  );
+  
   setExcelHeaders(res, fileName);
 
   await result.data.workbook.xlsx.write(res);

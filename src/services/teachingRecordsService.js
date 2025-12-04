@@ -414,4 +414,4 @@ module.exports = {
   createTeachingRecord,
   updateTeachingRecord,
   deleteTeachingRecord
-};
+};  

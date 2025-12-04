@@ -303,7 +303,7 @@ const createBCSheet = async (workbook, sheetName, teacher, subject, mainClass, r
 
 const exportReport = async (teacherIds, schoolYearId, options = {}) => {
   try {
-    const { type = 'bc', bcNumber, weekId, weekIds, semester } = options;
+    const { type = 'bc', bcNumber, bcNumbers, weekId, weekIds, semester } = options;
     const teacherIdArray = Array.isArray(teacherIds) ? teacherIds : [teacherIds];
 
     const allWeeks = await Week.find({}).sort({ weekNumber: 1 });
@@ -336,48 +336,87 @@ const exportReport = async (teacherIds, schoolYearId, options = {}) => {
 
         let query = { teacherId };
         if (resolvedSchoolYearId) query.schoolYearId = resolvedSchoolYearId;
-        
-        if (type === 'week' && weekId) {
-          query.weekId = weekId;
-        } else if (type === 'week' && weekIds && weekIds.length > 0) {
-          query.weekId = { $in: weekIds };
-        } else if (type === 'semester' && semester) {
-          const semesterWeeks = allWeeks.filter(w => {
-            const wn = w.weekNumber || 0;
-            return semester === 1 ? (wn >= 1 && wn <= 18) : (wn >= 19 && wn <= 35);
-          });
-          query.weekId = { $in: semesterWeeks.map(w => w._id) };
-        }
 
-        const records = await TeachingRecords.find(query)
+        const allRecords = await TeachingRecords.find(query)
           .populate("weekId", "weekNumber startDate endDate")
           .populate("subjectId", "name")
           .populate("classId", "name grade")
           .sort({ "weekId.weekNumber": 1 });
 
-        if (records.length === 0) continue;
-
-        const monthGroups = groupRecordsByMonth(records, allWeeks);
+        // Xử lý theo loại báo cáo
+        let monthsToExport = [];
         
-        let monthsToExport = Object.keys(monthGroups).map(Number);
-        if (bcNumber) {
-          monthsToExport = monthsToExport.filter(m => m === bcNumber);
+        if (type === 'bc') {
+          if (bcNumbers && bcNumbers.length > 0) {
+            // Nhiều tháng được chọn
+            monthsToExport = bcNumbers;
+          } else if (bcNumber) {
+            // Một tháng được chọn
+            monthsToExport = [bcNumber];
+          } else {
+            // Tự động: tất cả tháng có dữ liệu
+            const monthGroups = groupRecordsByMonth(allRecords, allWeeks);
+            monthsToExport = Object.keys(monthGroups).map(Number);
+          }
+        } else if (type === 'week') {
+          // Xử lý tuần: lấy tháng từ các tuần được chọn
+          let selectedWeeks = [];
+          if (weekIds && weekIds.length > 0) {
+            selectedWeeks = allWeeks.filter(w => weekIds.includes(w._id.toString()));
+          } else if (weekId) {
+            selectedWeeks = allWeeks.filter(w => w._id.toString() === weekId);
+          }
+          
+          // Nhóm tuần theo tháng
+          const monthSet = new Set();
+          selectedWeeks.forEach(w => {
+            monthSet.add(getMonthFromWeek(w));
+          });
+          monthsToExport = Array.from(monthSet);
+        } else if (type === 'semester') {
+          // Học kỳ: lấy tất cả tháng trong học kỳ
+          const semesterWeeks = allWeeks.filter(w => {
+            const wn = w.weekNumber || 0;
+            return semester === 1 ? (wn >= 1 && wn <= 18) : (wn >= 19 && wn <= 35);
+          });
+          
+          const monthSet = new Set();
+          semesterWeeks.forEach(w => {
+            monthSet.add(getMonthFromWeek(w));
+          });
+          monthsToExport = Array.from(monthSet);
+        } else if (type === 'year') {
+          // Cả năm: tất cả tháng trong năm học
+          const monthSet = new Set();
+          allWeeks.forEach(w => {
+            monthSet.add(getMonthFromWeek(w));
+          });
+          monthsToExport = Array.from(monthSet).length > 0 
+            ? Array.from(monthSet) 
+            : [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
         }
 
-        for (const month of monthsToExport.sort((a, b) => {
+        // Sắp xếp tháng theo thứ tự năm học
+        monthsToExport.sort((a, b) => {
           const orderA = a >= 9 ? a - 9 : a + 3;
           const orderB = b >= 9 ? b - 9 : b + 3;
           return orderA - orderB;
-        })) {
-          const monthData = monthGroups[month];
-          if (!monthData || monthData.records.length === 0) continue;
+        });
 
+        // Xuất từng tháng
+        for (const month of monthsToExport) {
           const weeksInMonth = await getWeeksInMonth(month, schoolYearLabel);
+          
+          // Lọc records cho tháng này
+          const monthRecords = allRecords.filter(r => {
+            const weekId = r.weekId?._id?.toString() || r.weekId?.toString();
+            return weeksInMonth.some(w => (w._id?.toString() || w.id) === weekId);
+          });
 
           const teacherShortName = teacher.name.split(' ').pop();
           const sheetName = teacherIdArray.length > 1 
-            ? `BC${month}_${teacherShortName}`
-            : `BC ${month}`;
+            ? `${teacherShortName}_BC${month}`
+            : `BC${month}`;
 
           await createBCSheet(
             workbook,
@@ -385,7 +424,7 @@ const exportReport = async (teacherIds, schoolYearId, options = {}) => {
             teacher,
             teacher.subjectIds?.[0] || null,
             teacher.mainClassId,
-            monthData.records,
+            monthRecords, // Có thể rỗng nếu không có dữ liệu
             weeksInMonth,
             month,
             schoolYearLabel
@@ -393,6 +432,7 @@ const exportReport = async (teacherIds, schoolYearId, options = {}) => {
           sheetCount++;
         }
       } catch (innerErr) {
+        console.error("Error processing teacher:", innerErr);
         continue;
       }
     }
@@ -401,16 +441,26 @@ const exportReport = async (teacherIds, schoolYearId, options = {}) => {
       return { 
         success: false, 
         statusCode: 404, 
-        message: `Không tìm thấy dữ liệu giảng dạy cho năm học ${schoolYearLabel || schoolYearId}. Giáo viên chưa nhập tiết dạy hoặc dữ liệu thuộc năm học khác.` 
+        message: `Không thể tạo báo cáo cho năm học ${schoolYearLabel || schoolYearId}` 
       };
     }
 
-    return { success: true, data: { workbook, sheetCount, schoolYearLabel, fileName: `BaoCao_${schoolYearLabel || 'report'}.xlsx` } };
+    return { 
+      success: true, 
+      data: { 
+        workbook, 
+        sheetCount, 
+        schoolYearLabel, 
+        fileName: `BaoCao_${schoolYearLabel || 'report'}.xlsx`,
+        teachers: teacherIdArray 
+      } 
+    };
   } catch (error) {
+    console.error("Export error:", error);
     return { 
       success: false, 
       statusCode: 500, 
-      message: "Lỗi hệ thống khi xuất báo cáo. Vui lòng thử lại sau: " + (error.message || '') 
+      message: "Lỗi hệ thống khi xuất báo cáo: " + (error.message || '') 
     };
   }
 };
@@ -501,14 +551,6 @@ const getBCReport = async (teacherId, schoolYearId, bcNumber) => {
       .populate("subjectId", "name")
       .populate("classId", "name grade");
 
-    if (records.length === 0) {
-      return { 
-        success: false, 
-        statusCode: 404, 
-        message: `Không có dữ liệu giảng dạy cho năm học ${schoolYearId || ''}` 
-      };
-    }
-
     return {
       success: true,
       data: {
@@ -539,16 +581,6 @@ const getTeacherReport = async (teacherId, type, filters = {}) => {
       .populate("subjectId", "name")
       .populate("classId", "name grade")
       .sort({ "weekId.weekNumber": 1 });
-
-    if (records.length === 0) {
-      return { 
-        success: false, 
-        statusCode: 404, 
-        message: filters.schoolYearId 
-          ? `Không có dữ liệu giảng dạy cho năm học (schoolYearId=${filters.schoolYearId})` 
-          : "Không có dữ liệu giảng dạy" 
-      };
-    }
 
     return {
       success: true,
