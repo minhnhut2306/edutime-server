@@ -77,7 +77,6 @@ const validateEntities = async (teacherId, weekId, subjectId, classId) => {
   return { teacher, week, subject, classData };
 };
 
-// Build query filters
 const buildQueryFilters = (filters = {}) => {
   const query = {};
   
@@ -104,15 +103,7 @@ const buildQueryFilters = (filters = {}) => {
   return query;
 };
 
-// Sort options - thêm sắp xếp theo weekNumber
-const getSortOptions = (sortBy = 'week') => {
-  // Mặc định sắp xếp theo tuần tăng dần
-  if (sortBy === 'week') {
-    return { 'weekId': 1 }; // Sort by weekId, will be enhanced with weekNumber
-  }
-  return { createdAt: -1 }; // Default sort
-};
-
+// ✅ FIX: Sort tất cả records trước, sau đó mới phân trang
 const getAllTeachingRecords = async (filters = {}, pagination = { page: 1, limit: 10 }) => {
   try {
     const query = buildQueryFilters(filters);
@@ -136,33 +127,30 @@ const getAllTeachingRecords = async (filters = {}, pagination = { page: 1, limit
       }
     }
 
-    const page = parseInt(pagination.page, 10) || 1;
-    const limit = parseInt(pagination.limit, 10) || 10;
-    const skip = (page - 1) * limit;
+    // ✅ Step 1: Lấy TẤT CẢ records và populate
+    const allRecords = await TeachingRecords.find(query)
+      .populate(POPULATE_OPTIONS);
 
-    // Populate và sort
-    let recordsQuery = TeachingRecords.find(query)
-      .populate(POPULATE_OPTIONS)
-      .skip(skip)
-      .limit(limit);
-
-    // Lấy records và sort theo weekNumber sau khi populate
-    const [recordsRaw, total] = await Promise.all([
-      recordsQuery,
-      TeachingRecords.countDocuments(query)
-    ]);
-
-    // Sort theo weekNumber sau khi đã populate
-    const records = recordsRaw.sort((a, b) => {
+    // ✅ Step 2: Sort theo weekNumber
+    allRecords.sort((a, b) => {
       const weekNumA = a.weekId?.weekNumber || 0;
       const weekNumB = b.weekId?.weekNumber || 0;
       return weekNumA - weekNumB;
     });
 
+    // ✅ Step 3: Áp dụng pagination sau khi đã sort
+    const page = parseInt(pagination.page, 10) || 1;
+    const limit = parseInt(pagination.limit, 10) || 10;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    
+    const paginatedRecords = allRecords.slice(startIndex, endIndex);
+    const total = allRecords.length;
+
     return { 
       success: true, 
       data: {
-        records,
+        records: paginatedRecords,
         pagination: {
           page,
           limit,
@@ -176,6 +164,7 @@ const getAllTeachingRecords = async (filters = {}, pagination = { page: 1, limit
   }
 };
 
+// ✅ FIX: Tương tự cho getTeachingRecordsByTeacher
 const getTeachingRecordsByTeacher = async (teacherId, filters = {}, pagination = { page: 1, limit: 10 }) => {
   try {
     if (!teacherId) {
@@ -220,32 +209,30 @@ const getTeachingRecordsByTeacher = async (teacherId, filters = {}, pagination =
       }
     }
 
-    const page = parseInt(pagination.page, 10) || 1;
-    const limit = parseInt(pagination.limit, 10) || 10;
-    const skip = (page - 1) * limit;
+    // ✅ Step 1: Lấy TẤT CẢ records và populate
+    const allRecords = await TeachingRecords.find(query)
+      .populate(POPULATE_OPTIONS);
 
-    // Populate và lấy records
-    let recordsQuery = TeachingRecords.find(query)
-      .populate(POPULATE_OPTIONS)
-      .skip(skip)
-      .limit(limit);
-
-    const [recordsRaw, total] = await Promise.all([
-      recordsQuery,
-      TeachingRecords.countDocuments(query)
-    ]);
-
-    // Sort theo weekNumber sau khi đã populate
-    const records = recordsRaw.sort((a, b) => {
+    // ✅ Step 2: Sort theo weekNumber
+    allRecords.sort((a, b) => {
       const weekNumA = a.weekId?.weekNumber || 0;
       const weekNumB = b.weekId?.weekNumber || 0;
       return weekNumA - weekNumB;
     });
 
+    // ✅ Step 3: Áp dụng pagination sau khi đã sort
+    const page = parseInt(pagination.page, 10) || 1;
+    const limit = parseInt(pagination.limit, 10) || 10;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    
+    const paginatedRecords = allRecords.slice(startIndex, endIndex);
+    const total = allRecords.length;
+
     return { 
       success: true, 
       data: {
-        records,
+        records: paginatedRecords,
         pagination: {
           page,
           limit,
