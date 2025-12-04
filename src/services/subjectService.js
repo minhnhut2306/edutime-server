@@ -187,7 +187,7 @@ const getSubjects = async (filters = {}) => {
     query.name = { $regex: filters.name, $options: "i" };
   }
 
-  return await Subject.find(query).sort({ createdAt: -1 });
+  return await Subject.find(query).sort({ name: 1 });
 };
 
 const createSubject = async (data) => {

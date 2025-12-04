@@ -15,10 +15,13 @@ const getTeachers = asyncHandler(async (req, res) => {
     schoolYear: req.query.schoolYear
   };
 
-  const teachers = await teacherService.getTeachers(filters);
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+
+  const result = await teacherService.getTeachers(filters, page, limit);
 
   return res.json(
-    successResponse("Lấy danh sách giáo viên thành công", { teachers })
+    successResponse("Lấy danh sách giáo viên thành công", result)
   );
 });
 

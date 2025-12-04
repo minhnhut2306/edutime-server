@@ -132,7 +132,7 @@ const processSubjectNames = async (subjectNames, schoolYearId) => {
   return subjectIds;
 };
 
-const getTeachers = async (filters = {}) => {
+const getTeachers = async (filters = {}, page = 1, limit = 10) => {
   const schoolYearId = await getSchoolYearId(filters.schoolYear);
 
   const query = { schoolYearId };
@@ -153,9 +153,24 @@ const getTeachers = async (filters = {}) => {
     query.mainClassId = filters.mainClassId;
   }
 
-  return await Teacher.find(query)
+  const skip = (page - 1) * limit;
+  const total = await Teacher.countDocuments(query);
+  
+  const teachers = await Teacher.find(query)
     .populate(POPULATE_OPTIONS)
-    .sort({ createdAt: -1 });
+    .sort({ name: 1 })
+    .skip(skip)
+    .limit(limit);
+
+  return {
+    teachers,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit)
+    }
+  };
 };
 
 const getTeacherById = async (id) => {
