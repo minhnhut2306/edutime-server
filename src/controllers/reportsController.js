@@ -52,9 +52,10 @@ const parseArrayParam = (param) => {
 
 const setExcelHeaders = (res, fileName) => {
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(fileName)}"`);
 };
 
+// Hàm tạo tên file theo quy tắc mới: TenGV_GIO-BIEN-CHE_LoaiBaoCao_NamHoc.xlsx
 const generateFileName = (teachers, type, params, schoolYearLabel) => {
   let fileName = '';
   
