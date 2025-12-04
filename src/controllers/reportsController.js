@@ -55,42 +55,57 @@ const setExcelHeaders = (res, fileName) => {
   res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(fileName)}"`);
 };
 
-// Hàm tạo tên file theo quy tắc mới: TenGV_GIO-BIEN-CHE_LoaiBaoCao_NamHoc.xlsx
+// Hàm tạo tên file theo quy tắc:
+// TenGV_GIO-BIEN-CHE_(thang/tuan/HK/ca-nam)2025_2026.xlsx
 const generateFileName = (teachers, type, params, schoolYearLabel) => {
-  let fileName = '';
-  
-  // Tên giáo viên
-  if (teachers.length === 1) {
-    const teacherName = teachers[0].name.replace(/\s+/g, '_');
-    fileName = `${teacherName}_GIO-BIEN-CHE`;
+  let baseName = '';
+
+  // Tên giáo viên: 1 GV thì lấy tên GV, nhiều GV thì để TatCaGV
+  if (teachers && teachers.length === 1) {
+    const teacherName = (teachers[0].name || 'GIAO-VIEN')
+      .trim()
+      .replace(/\s+/g, '_');
+    baseName = `${teacherName}_GIO-BIEN-CHE`;
   } else {
-    fileName = `${teachers.length}GV_GIO-BIEN-CHE`;
+    baseName = `TatCaGV_GIO-BIEN-CHE`;
   }
-  
-  // Loại báo cáo
+
+  // Nhãn phạm vi báo cáo (tháng / tuần / HK / cả năm)
+  let scopeLabel = '';
   if (type === 'bc') {
     if (params.bcNumbers && params.bcNumbers.length > 0) {
-      fileName += `_Thang${params.bcNumbers.join('-')}`;
+      scopeLabel = `Thang${params.bcNumbers.join('-')}`;
     } else if (params.bcNumber) {
-      fileName += `_Thang${params.bcNumber}`;
+      scopeLabel = `Thang${params.bcNumber}`;
     } else {
-      fileName += `_TatCaThang`;
+      scopeLabel = `TatCaThang`;
     }
   } else if (type === 'week') {
     if (params.weekIds && params.weekIds.length > 0) {
-      fileName += `_${params.weekIds.length}Tuan`;
+      scopeLabel = `${params.weekIds.length}Tuan`;
     } else {
-      fileName += `_1Tuan`;
+      scopeLabel = `1Tuan`;
     }
   } else if (type === 'semester') {
-    fileName += `_HK${params.semester}`;
+    scopeLabel = `HK${params.semester}`;
   } else if (type === 'year') {
-    fileName += `_CaNam`;
+    scopeLabel = `CaNam`;
   }
-  
-  // Năm học
-  fileName += `_${schoolYearLabel}`;
-  
+
+  // Chuẩn hóa năm học: "2025-2026" -> "2025_2026"
+  const normalizedSchoolYear = (schoolYearLabel || 'NAMHOC')
+    .toString()
+    .replace(/\s+/g, '')
+    .replace(/-/g, '_');
+
+  // Ghép tên cuối cùng theo dạng:
+  // TenGV_GIO-BIEN-CHE_(Thang/Tuan/HK/CaNam)2025_2026.xlsx
+  let fileName = baseName;
+  if (scopeLabel) {
+    fileName += `_(${scopeLabel})`;
+  }
+  fileName += `_${normalizedSchoolYear}`;
+
   return fileName + '.xlsx';
 };
 
