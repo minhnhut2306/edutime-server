@@ -1,10 +1,13 @@
 const User = require("../models/userModel");
 const Token = require("../models/tokenModel");
+const OTP = require("../models/otpModel");
 const crypto = require("crypto");
 const validator = require("../validations/authen.validation");
 const Teacher = require("../models/teacherModel");
+const { sendOTPEmail, sendPasswordChangeNotification } = require("../utils/emailService");
 
 const TOKEN_EXPIRY_DAYS = 7;
+const OTP_EXPIRY_MINUTES = 10;
 
 const normalizeEmail = (email) => email?.toLowerCase().trim();
 
@@ -12,6 +15,10 @@ const generateToken = () => ({
   token: crypto.randomBytes(32).toString("hex"),
   expiresAt: new Date(Date.now() + TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
 });
+
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
 
 const createTokenRecord = async (userId) => {
   await Token.deleteMany({ userId });
@@ -130,7 +137,147 @@ const changePassword = async (userId, newPassword) => {
   await user.save();
   await Token.deleteMany({ userId: user._id });
 
+  // Gửi email thông báo
+  await sendPasswordChangeNotification(user.email);
+
   return { message: "Đổi mật khẩu thành công" };
+};
+
+// Đổi mật khẩu với mật khẩu cũ
+const changePasswordWithOld = async (userId, oldPassword, newPassword) => {
+  if (!userId) throw new Error("ID người dùng là bắt buộc");
+  if (!oldPassword) throw new Error("Mật khẩu cũ là bắt buộc");
+  if (!newPassword) throw new Error("Mật khẩu mới là bắt buộc");
+
+  if (!validator.isValidPassword(newPassword)) {
+    throw new Error("Mật khẩu phải có ít nhất 8 ký tự và chứa ký tự đặc biệt");
+  }
+
+  const user = await User.findById(userId);
+  if (!user) throw new Error("Người dùng không tồn tại");
+
+  // Kiểm tra mật khẩu cũ
+  const isPasswordValid = await user.comparePassword(oldPassword);
+  if (!isPasswordValid) throw new Error("Mật khẩu cũ không đúng");
+
+  // Kiểm tra mật khẩu mới không trùng mật khẩu cũ
+  const isSamePassword = await user.comparePassword(newPassword);
+  if (isSamePassword) throw new Error("Mật khẩu mới phải khác mật khẩu cũ");
+
+  user.password = newPassword;
+  await user.save();
+  await Token.deleteMany({ userId: user._id });
+
+  // Gửi email thông báo
+  await sendPasswordChangeNotification(user.email);
+
+  return { message: "Đổi mật khẩu thành công" };
+};
+
+// Gửi OTP qua email
+const sendOTP = async (email) => {
+  if (!email) throw new Error("Email là bắt buộc");
+
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!validator.isEmail(normalizedEmail)) {
+    throw new Error("Định dạng email không hợp lệ");
+  }
+
+  // Kiểm tra user có tồn tại không
+  const user = await User.findOne({ email: normalizedEmail });
+  if (!user) throw new Error("Email không tồn tại trong hệ thống");
+
+  // Xóa OTP cũ của email này
+  await OTP.deleteMany({ email: normalizedEmail });
+
+  // Tạo OTP mới
+  const otp = generateOTP();
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  await OTP.create({
+    email: normalizedEmail,
+    otp,
+    expiresAt,
+  });
+
+  // Gửi OTP qua email
+  await sendOTPEmail(normalizedEmail, otp);
+
+  return { message: "Mã OTP đã được gửi đến email của bạn" };
+};
+
+// Xác thực OTP
+const verifyOTP = async (email, otp) => {
+  if (!email || !otp) throw new Error("Email và OTP là bắt buộc");
+
+  const normalizedEmail = normalizeEmail(email);
+
+  const otpRecord = await OTP.findOne({
+    email: normalizedEmail,
+    otp,
+    verified: false,
+  });
+
+  if (!otpRecord) throw new Error("Mã OTP không đúng");
+
+  if (otpRecord.expiresAt < new Date()) {
+    await OTP.deleteOne({ _id: otpRecord._id });
+    throw new Error("Mã OTP đã hết hạn");
+  }
+
+  // Đánh dấu OTP đã xác thực
+  otpRecord.verified = true;
+  await otpRecord.save();
+
+  return { message: "Xác thực OTP thành công" };
+};
+
+// Đặt lại mật khẩu sau khi xác thực OTP
+const resetPassword = async (email, otp, newPassword) => {
+  if (!email || !otp || !newPassword) {
+    throw new Error("Email, OTP và mật khẩu mới là bắt buộc");
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!validator.isValidPassword(newPassword)) {
+    throw new Error("Mật khẩu phải có ít nhất 8 ký tự và chứa ký tự đặc biệt");
+  }
+
+  // Kiểm tra OTP đã được xác thực
+  const otpRecord = await OTP.findOne({
+    email: normalizedEmail,
+    otp,
+    verified: true,
+  });
+
+  if (!otpRecord) {
+    throw new Error("OTP chưa được xác thực hoặc không hợp lệ");
+  }
+
+  if (otpRecord.expiresAt < new Date()) {
+    await OTP.deleteOne({ _id: otpRecord._id });
+    throw new Error("Mã OTP đã hết hạn");
+  }
+
+  // Tìm user và đổi mật khẩu
+  const user = await User.findOne({ email: normalizedEmail });
+  if (!user) throw new Error("Người dùng không tồn tại");
+
+  user.password = newPassword;
+  await user.save();
+
+  // Xóa tất cả token của user
+  await Token.deleteMany({ userId: user._id });
+
+  // Xóa OTP đã sử dụng
+  await OTP.deleteMany({ email: normalizedEmail });
+
+  // Gửi email thông báo
+  await sendPasswordChangeNotification(user.email);
+
+  return { message: "Đặt lại mật khẩu thành công" };
 };
 
 const deleteUser = async (userId) => {
@@ -184,5 +331,9 @@ module.exports = {
   updateUserRole,
   deleteUserById,
   changePassword,
+  changePasswordWithOld,
   deleteUser,
+  sendOTP,
+  verifyOTP,
+  resetPassword,
 };

@@ -21,19 +21,31 @@ router.get("/", (req, res) => {
   });
 });
 
+// Auth routes
 router.post("/auth/register", authenController.register);
 router.post("/auth/login", authenController.login);
 router.post("/auth/token/verify", authenController.verifyToken);
 router.post("/auth/logout", authMiddleware, authenController.logout);
 router.post("/auth/token/refresh", authMiddleware, authenController.refreshToken);
 router.delete("/auth/token/revoke", authMiddleware, authenController.revokeToken);
+
+// Password routes
+router.patch("/auth/me/password", authMiddleware, authenController.changePassword);
+router.patch("/auth/me/change-password", authMiddleware, authenController.changePasswordWithOld);
+
+// Forgot password routes (không cần auth)
+router.post("/auth/forgot-password", authenController.forgotPassword);
+router.post("/auth/verify-otp", authenController.verifyOTP);
+router.post("/auth/reset-password", authenController.resetPassword);
+
+// User management routes
 router.get("/auth", authMiddleware, isAdmin, authenController.getAllUsers);
 router.get("/auth/me", authMiddleware, authenController.getProfile);
-router.patch("/auth/me/password", authMiddleware, authenController.changePassword);
 router.put("/auth/:userId/role", authMiddleware, isAdmin, authenController.updateUserRole);
 router.delete("/auth/:userId", authMiddleware, isAdmin, authenController.deleteUserById);
 router.delete("/auth/me", authMiddleware, authenController.deleteUser);
 
+// Teacher routes
 router.get("/teachers", authMiddleware, teacherController.getTeachers);
 router.get("/teachers/:id", authMiddleware, teacherController.getTeacherById);
 router.post("/teachers", authMiddleware, teacherController.createTeacher);
@@ -42,6 +54,7 @@ router.delete("/teachers/:id", authMiddleware, teacherController.deleteTeacher);
 router.put("/teachers/:id/user", authMiddleware, teacherController.updateTeacherUserId);
 router.post("/teachers/import", authMiddleware, upload.single("file"), teacherController.importTeachers);
 
+// Class routes
 router.get("/classes/grades", authMiddleware, classController.getAvailableGrades);
 router.post("/classes/import", authMiddleware, upload.single("file"), classController.importClasses);
 router.get("/classes", authMiddleware, classController.getClasses);
@@ -50,21 +63,25 @@ router.post("/classes", authMiddleware, classController.createClass);
 router.put("/classes/:id", authMiddleware, classController.updateClass);
 router.delete("/classes/:id", authMiddleware, classController.deleteClass);
 
+// Subject routes
 router.get("/subjects", authMiddleware, subjectController.getSubjects);
 router.post("/subjects", authMiddleware, subjectController.createSubject);
 router.put("/subjects/:id", authMiddleware, subjectController.updateSubject);
 router.delete("/subjects/:id", authMiddleware, subjectController.deleteSubject);
 
+// Week routes
 router.get("/weeks", authMiddleware, weekController.getWeeks);
 router.post("/weeks", authMiddleware, weekController.createWeek);
 router.put("/weeks/:id", authMiddleware, weekController.updateWeek);
 router.delete("/weeks/:id", authMiddleware, weekController.deleteWeek);
 
+// Teaching records routes
 router.get("/teaching-records", authMiddleware, teachingRecordsController.getTeachingRecords);
 router.post("/teaching-records", authMiddleware, teachingRecordsController.createTeachingRecord);
 router.patch("/teaching-records/:id", authMiddleware, teachingRecordsController.updateTeachingRecord);
 router.delete("/teaching-records/:id", authMiddleware, teachingRecordsController.deleteTeachingRecord);
 
+// Report routes
 router.get("/reports/export", authMiddleware, reportsController.exportReport);
 router.get("/reports/export/month", authMiddleware, reportsController.exportMonthReport);
 router.get("/reports/export/week", authMiddleware, reportsController.exportWeekReport);
@@ -72,6 +89,7 @@ router.get("/reports/export/semester", authMiddleware, reportsController.exportS
 router.get("/reports/export/year", authMiddleware, reportsController.exportYearReport);
 router.get("/reports/teacher/:id", authMiddleware, reportsController.getTeacherReport);
 
+// School year routes
 router.get("/school-years", authMiddleware, schoolYearController.getSchoolYears);
 router.get("/school-years/active", authMiddleware, schoolYearController.getActiveSchoolYear);
 router.get("/school-years/:year", authMiddleware, schoolYearController.getSchoolYearData);

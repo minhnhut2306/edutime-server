@@ -122,6 +122,62 @@ const changePassword = asyncHandler(async (req, res) => {
   return res.json(successResponse("Đổi mật khẩu thành công"));
 });
 
+// Đổi mật khẩu với mật khẩu cũ
+const changePasswordWithOld = asyncHandler(async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+
+  if (!oldPassword || !newPassword) {
+    return res.status(400).json(
+      badRequestResponse("Mật khẩu cũ và mật khẩu mới không được để trống")
+    );
+  }
+
+  await authenService.changePasswordWithOld(req.userId, oldPassword, newPassword);
+  return res.json(successResponse("Đổi mật khẩu thành công"));
+});
+
+// Gửi OTP
+const forgotPassword = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json(
+      badRequestResponse("Email không được để trống")
+    );
+  }
+
+  const result = await authenService.sendOTP(email);
+  return res.json(successResponse(result.message));
+});
+
+// Xác thực OTP
+const verifyOTP = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    return res.status(400).json(
+      badRequestResponse("Email và OTP không được để trống")
+    );
+  }
+
+  const result = await authenService.verifyOTP(email, otp);
+  return res.json(successResponse(result.message));
+});
+
+// Đặt lại mật khẩu
+const resetPassword = asyncHandler(async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+
+  if (!email || !otp || !newPassword) {
+    return res.status(400).json(
+      badRequestResponse("Email, OTP và mật khẩu mới không được để trống")
+    );
+  }
+
+  const result = await authenService.resetPassword(email, otp, newPassword);
+  return res.json(successResponse(result.message));
+});
+
 const deleteUser = asyncHandler(async (req, res) => {
   const result = await authenService.deleteUser(req.userId);
   return res.json(successResponse("Xóa tài khoản thành công", result));
@@ -157,6 +213,10 @@ module.exports = {
   getProfile,
   getAllUsers,
   changePassword,
+  changePasswordWithOld,
+  forgotPassword,
+  verifyOTP,
+  resetPassword,
   updateUserRole,
   deleteUserById,
   deleteUser

@@ -53,10 +53,19 @@ const parseArrayParam = (param) => {
 const setExcelHeaders = (res, fileName) => {
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(fileName)}"`);
+  res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
 };
 
 // TenGV_GIO-BIEN-CHE_(Thang/Tuan/HocKy/CaNam)2025_2026.xlsx
-const generateFileName = (teachers, type, params, schoolYearLabel) => {
+const generateFileName = async (teachers, type, params, schoolYearLabel) => {
+  // Log để debug
+  console.log('[GENERATE FILENAME] Input:', { 
+    teachersCount: teachers?.length, 
+    type, 
+    params, 
+    schoolYearLabel 
+  });
+
   // 1 GV: lấy tên GV, nhiều GV: TatCaGV
   let baseName;
   if (teachers && teachers.length === 1) {
@@ -80,9 +89,52 @@ const generateFileName = (teachers, type, params, schoolYearLabel) => {
       scopeLabel = `Thang`;
     }
   } else if (type === 'week') {
-    scopeLabel = 'Tuan';
+    // Lấy thông tin tuần để hiển thị số tuần hoặc ngày
+    if (params.weekIds && params.weekIds.length > 0) {
+      // Nhiều tuần: lấy thông tin tuần đầu và cuối
+      try {
+        const Week = require("../models/weekModel");
+        const weeks = await Week.find({ _id: { $in: params.weekIds } }).sort({ weekNumber: 1 });
+        if (weeks.length > 0) {
+          const firstWeek = weeks[0];
+          const lastWeek = weeks[weeks.length - 1];
+          if (weeks.length === 1) {
+            // 1 tuần: Tuan5_09-09
+            const startDate = new Date(firstWeek.startDate);
+            const day = String(startDate.getDate()).padStart(2, '0');
+            const month = String(startDate.getMonth() + 1).padStart(2, '0');
+            scopeLabel = `Tuan${firstWeek.weekNumber}_${day}-${month}`;
+          } else {
+            // Nhiều tuần: Tuan5-8
+            scopeLabel = `Tuan${firstWeek.weekNumber}-${lastWeek.weekNumber}`;
+          }
+        } else {
+          scopeLabel = `Tuan${params.weekIds.length}tuan`;
+        }
+      } catch (err) {
+        scopeLabel = `Tuan${params.weekIds.length}tuan`;
+      }
+    } else if (params.weekId) {
+      // 1 tuần: Tuan5_09-09
+      try {
+        const Week = require("../models/weekModel");
+        const week = await Week.findById(params.weekId);
+        if (week) {
+          const startDate = new Date(week.startDate);
+          const day = String(startDate.getDate()).padStart(2, '0');
+          const month = String(startDate.getMonth() + 1).padStart(2, '0');
+          scopeLabel = `Tuan${week.weekNumber}_${day}-${month}`;
+        } else {
+          scopeLabel = 'Tuan';
+        }
+      } catch (err) {
+        scopeLabel = 'Tuan';
+      }
+    } else {
+      scopeLabel = 'Tuan';
+    }
   } else if (type === 'semester') {
-    scopeLabel = `HocKy${params.semester}`;
+    scopeLabel = `HocKy${params.semester || ''}`;
   } else if (type === 'year') {
     scopeLabel = 'CaNam';
   }
@@ -143,6 +195,8 @@ const getTeacherReport = asyncHandler(async (req, res) => {
 const exportReport = asyncHandler(async (req, res) => {
   let { teacherId, teacherIds, schoolYearId, schoolYear, type = 'bc', bcNumber, bcNumbers, weekId, weekIds, semester } = req.query;
 
+  console.log('[EXPORT REPORT] Query params:', { teacherId, teacherIds, type, bcNumber, bcNumbers, weekId, weekIds, semester });
+
   const resolvedSchoolYearId = await resolveSchoolYearId(schoolYearId, schoolYear);
 
   const targetTeacherIds = parseArrayParam(teacherIds) || (teacherId ? [teacherId] : null);
@@ -175,9 +229,19 @@ const exportReport = asyncHandler(async (req, res) => {
     options.bcNumber = parseInt(bcNumber);
   }
   
-  if (weekId) options.weekId = weekId;
-  if (weekIds) options.weekIds = parseArrayParam(weekIds);
+  // Xử lý weekId và weekIds
+  if (weekIds) {
+    const parsed = parseArrayParam(weekIds);
+    options.weekIds = parsed;
+    console.log('[EXPORT REPORT] Parsed weekIds:', parsed);
+  } else if (weekId) {
+    options.weekId = weekId;
+    console.log('[EXPORT REPORT] Single weekId:', weekId);
+  }
+  
   if (semester) options.semester = parseInt(semester);
+
+  console.log('[EXPORT REPORT] Final options:', options);
 
   const result = await reportsService.exportReport(targetTeacherIds, resolvedSchoolYearId, options);
 
@@ -192,10 +256,16 @@ const exportReport = asyncHandler(async (req, res) => {
   // Lấy thông tin giáo viên để đặt tên file
   const teachers = await Teacher.find({ _id: { $in: targetTeacherIds } }).select('name');
   
-  const fileName = generateFileName(
+  const fileName = await generateFileName(
     teachers, 
     type, 
-    { bcNumber, bcNumbers: options.bcNumbers, weekIds: options.weekIds, semester },
+    { 
+      bcNumber: options.bcNumber, 
+      bcNumbers: options.bcNumbers, 
+      weekId: options.weekId,
+      weekIds: options.weekIds, 
+      semester: options.semester 
+    },
     result.data.schoolYearLabel
   );
   
@@ -248,7 +318,7 @@ const exportMonthReport = asyncHandler(async (req, res) => {
     _id: { $in: Array.isArray(targetIds) ? targetIds : [targetIds] } 
   }).select('name');
   
-  const fileName = generateFileName(
+  const fileName = await generateFileName(
     teachers,
     'bc',
     { bcNumber: options.bcNumber, bcNumbers: options.bcNumbers },
@@ -263,6 +333,8 @@ const exportMonthReport = asyncHandler(async (req, res) => {
 
 const exportWeekReport = asyncHandler(async (req, res) => {
   const { teacherId, weekId, weekIds, schoolYearId, schoolYear } = req.query;
+
+  console.log('[EXPORT WEEK] Query params:', { teacherId, weekId, weekIds, schoolYearId, schoolYear });
 
   if (!teacherId) {
     return res.status(STATUS_CODES.BAD_REQUEST).json(
@@ -285,9 +357,12 @@ const exportWeekReport = asyncHandler(async (req, res) => {
 
   const options = { type: 'week' };
   if (weekIds) {
-    options.weekIds = parseArrayParam(weekIds);
+    const parsed = parseArrayParam(weekIds);
+    options.weekIds = parsed;
+    console.log('[EXPORT WEEK] Parsed weekIds:', parsed);
   } else {
     options.weekId = weekId;
+    console.log('[EXPORT WEEK] Single weekId:', weekId);
   }
 
   const result = await reportsService.exportReport([teacherId], resolvedSchoolYearId, options);
@@ -298,10 +373,10 @@ const exportWeekReport = asyncHandler(async (req, res) => {
 
   const teachers = await Teacher.find({ _id: teacherId }).select('name');
   
-  const fileName = generateFileName(
+  const fileName = await generateFileName(
     teachers,
     'week',
-    { weekIds: options.weekIds },
+    { weekId: options.weekId, weekIds: options.weekIds },
     result.data.schoolYearLabel
   );
   
@@ -340,7 +415,7 @@ const exportSemesterReport = asyncHandler(async (req, res) => {
 
   const teachers = await Teacher.find({ _id: teacherId }).select('name');
   
-  const fileName = generateFileName(
+  const fileName = await generateFileName(
     teachers,
     'semester',
     { semester: parseInt(semester) },
@@ -382,7 +457,7 @@ const exportYearReport = asyncHandler(async (req, res) => {
 
   const teachers = await Teacher.find({ _id: teacherId }).select('name');
   
-  const fileName = generateFileName(
+  const fileName = await generateFileName(
     teachers,
     'year',
     {},
