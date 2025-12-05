@@ -82,6 +82,7 @@ router.patch("/teaching-records/:id", authMiddleware, teachingRecordsController.
 router.delete("/teaching-records/:id", authMiddleware, teachingRecordsController.deleteTeachingRecord);
 
 // Report routes
+router.get("/reports/export/multiple", authMiddleware, reportsController.exportMultipleFiles);
 router.get("/reports/export", authMiddleware, reportsController.exportReport);
 router.get("/reports/export/month", authMiddleware, reportsController.exportMonthReport);
 router.get("/reports/export/week", authMiddleware, reportsController.exportWeekReport);

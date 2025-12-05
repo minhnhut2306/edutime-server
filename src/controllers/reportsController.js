@@ -3,6 +3,7 @@ const reportsService = require("../services/reportsService");
 const asyncHandler = require("../middleware/asyncHandler");
 const SchoolYear = require("../models/schoolYearModel");
 const Teacher = require("../models/teacherModel");
+const archiver = require('archiver');
 const {
   successResponse,
   notFoundResponse,
@@ -469,8 +470,148 @@ const exportYearReport = asyncHandler(async (req, res) => {
   await result.data.workbook.xlsx.write(res);
   res.end();
 });
+const exportMultipleFiles = asyncHandler(async (req, res) => {
+  let { teacherIds, schoolYearId, schoolYear, type = 'bc', bcNumber, bcNumbers, weekId, weekIds, semester } = req.query;
+
+  console.log('[EXPORT MULTIPLE] Query params:', { teacherIds, type, bcNumber, bcNumbers, weekId, weekIds, semester });
+
+  const resolvedSchoolYearId = await resolveSchoolYearId(schoolYearId, schoolYear);
+  const targetTeacherIds = parseArrayParam(teacherIds);
+
+  if (!targetTeacherIds || targetTeacherIds.length === 0) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(
+      badRequestResponse("teacherIds là bắt buộc")
+    );
+  }
+
+  if (!resolvedSchoolYearId) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(
+      badRequestResponse("schoolYearId là bắt buộc hoặc không tìm thấy schoolYear tương ứng")
+    );
+  }
+
+  if (!isValidObjectId(resolvedSchoolYearId)) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json(
+      badRequestResponse("schoolYearId không hợp lệ")
+    );
+  }
+
+  // Lấy thông tin năm học
+  const schoolYearData = await SchoolYear.findById(resolvedSchoolYearId);
+  if (!schoolYearData) {
+    return res.status(STATUS_CODES.NOT_FOUND).json(
+      notFoundResponse("Không tìm thấy năm học")
+    );
+  }
+  const schoolYearLabel = schoolYearData.year || schoolYearData.label || 'report';
+
+  const options = { type, schoolYearId: resolvedSchoolYearId };
+  
+  if (bcNumbers) {
+    const parsed = parseArrayParam(bcNumbers);
+    options.bcNumbers = parsed ? parsed.map(n => parseInt(n)) : null;
+  } else if (bcNumber) {
+    options.bcNumber = parseInt(bcNumber);
+  }
+  
+  if (weekIds) {
+    const parsed = parseArrayParam(weekIds);
+    options.weekIds = parsed;
+  } else if (weekId) {
+    options.weekId = weekId;
+  }
+  
+  if (semester) options.semester = parseInt(semester);
+
+  console.log('[EXPORT MULTIPLE] Final options:', options);
+
+  // Tạo ZIP file chứa nhiều Excel
+  const archive = archiver('zip', { zlib: { level: 9 } });
+
+  // Set headers trước khi pipe
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(`BaoCao_${targetTeacherIds.length}GV_${schoolYearLabel}.zip`)}"`);
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+  // Pipe archive vào response
+  archive.pipe(res);
+
+  let successCount = 0;
+  let failedTeachers = [];
+
+  // Xử lý từng giáo viên
+  for (const teacherId of targetTeacherIds) {
+    try {
+      console.log(`[EXPORT MULTIPLE] Processing teacher: ${teacherId}`);
+      
+      // Xuất từng giáo viên riêng lẻ
+      const result = await reportsService.exportReport([teacherId], resolvedSchoolYearId, options);
+
+      if (!result.success) {
+        console.log(`[EXPORT MULTIPLE] Failed for teacher ${teacherId}:`, result.message);
+        const teacher = await Teacher.findById(teacherId).select('name');
+        failedTeachers.push(teacher?.name || teacherId);
+        continue;
+      }
+
+      // Lấy thông tin giáo viên để đặt tên file
+      const teachers = await Teacher.find({ _id: teacherId }).select('name');
+      
+      const fileName = await generateFileName(
+        teachers, 
+        type, 
+        { 
+          bcNumber: options.bcNumber, 
+          bcNumbers: options.bcNumbers, 
+          weekId: options.weekId,
+          weekIds: options.weekIds, 
+          semester: options.semester 
+        },
+        result.data.schoolYearLabel
+      );
+
+      console.log(`[EXPORT MULTIPLE] Adding file to ZIP: ${fileName}`);
+
+      // Thêm file Excel vào ZIP
+      const buffer = await result.data.workbook.xlsx.writeBuffer();
+      archive.append(buffer, { name: fileName });
+      successCount++;
+
+      console.log(`[EXPORT MULTIPLE] Successfully added ${fileName} to ZIP`);
+
+    } catch (innerErr) {
+      console.error(`[EXPORT MULTIPLE] Error processing teacher ${teacherId}:`, innerErr);
+      const teacher = await Teacher.findById(teacherId).select('name');
+      failedTeachers.push(teacher?.name || teacherId);
+      continue;
+    }
+  }
+
+  // Thêm file log nếu có lỗi
+  if (failedTeachers.length > 0) {
+    const logContent = `Các giáo viên không thể xuất báo cáo:\n\n${failedTeachers.join('\n')}\n\nTổng số: ${failedTeachers.length}/${targetTeacherIds.length}`;
+    archive.append(logContent, { name: '_LOG_LOI.txt' });
+    console.log('[EXPORT MULTIPLE] Added error log to ZIP');
+  }
+
+  if (successCount === 0) {
+    // Không có file nào thành công, hủy archive và trả về lỗi
+    archive.abort();
+    return res.status(404).json(
+      notFoundResponse(`Không thể tạo báo cáo cho bất kỳ giáo viên nào. Vui lòng kiểm tra dữ liệu.`)
+    );
+  }
+
+  console.log(`[EXPORT MULTIPLE] Finalizing ZIP. Success: ${successCount}/${targetTeacherIds.length}`);
+
+  // Finalize archive (hoàn tất việc ghi file)
+  await archive.finalize();
+  
+  console.log('[EXPORT MULTIPLE] ZIP file sent successfully');
+});
 
 module.exports = {
+  exportMultipleFiles,
   getTeacherReport,
   exportReport,
   exportMonthReport,
