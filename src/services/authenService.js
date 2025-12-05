@@ -45,8 +45,9 @@ const login = async (email, password) => {
   if (!email || !password) {
     throw new Error("Email và mật khẩu là bắt buộc");
   }
-
-  const user = await User.findOne({ email: normalizeEmail(email) });
+  const normalizedEmail = normalizeEmail(email);
+  const user = await User.findOne({ email: normalizedEmail });
+  
   if (!user) throw new Error("Người dùng không tồn tại");
 
   const isPasswordValid = await user.comparePassword(password);
