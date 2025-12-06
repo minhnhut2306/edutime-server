@@ -1,20 +1,54 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-const tokenSchema = new mongoose.Schema({
+const tokenSchema = new mongoose.Schema(
+  {
     userId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
     },
     token: {
-        type: String,
-        required: true,
-        unique: true
+      type: String,
+      required: true,
+      unique: true,
     },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    }
-});
+    expiresAt: {
+      type: Date,
+      required: true,
+    },
+    deviceInfo: {
+      userAgent: String,
+      ip: String,
+      browser: String,
+      browserVersion: String,
+      os: String,
+      osVersion: String,
+      device: String,
+      fingerprint: String,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    deactivatedAt: {
+      type: Date,
+    },
+    deactivatedBy: {
+      type: String,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
 
-module.exports = mongoose.model('Token', tokenSchema);
+tokenSchema.index({ userId: 1, isActive: 1 });
+tokenSchema.index({ token: 1 });
+tokenSchema.index({ expiresAt: 1 });
+tokenSchema.index({ 'deviceInfo.fingerprint': 1 });
+
+tokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+const Token = mongoose.model("Token", tokenSchema);
+
+module.exports = Token;

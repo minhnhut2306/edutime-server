@@ -24,8 +24,10 @@ const login = asyncHandler(async (req, res) => {
       badRequestResponse("Email và mật khẩu không được để trống")
     );
   }
+  const userAgent = req.headers['user-agent'];
+  const ip = req.ip || req.connection.remoteAddress;
 
-  const result = await authenService.login(email, password);
+  const result = await authenService.login(email, password, userAgent, ip);
 
   return res.json(
     successResponse("Đăng nhập thành công", {
@@ -70,10 +72,16 @@ const verifyToken = asyncHandler(async (req, res) => {
 });
 
 const refreshToken = asyncHandler(async (req, res) => {
-  const token = extractToken(req);
-  if (!validateToken(token, res)) return;
+  const token = req.headers.authorization?.replace("Bearer ", "");
+  
+  if (!token) {
+    return res.status(400).json(badRequestResponse("Token không được cung cấp"));
+  }
 
-  const result = await authenService.refreshToken(token);
+  const userAgent = req.headers['user-agent'];
+  const ip = req.ip || req.connection.remoteAddress;
+
+  const result = await authenService.refreshToken(token, userAgent, ip);
 
   return res.json(
     successResponse("Làm mới token thành công", { token: result.token })

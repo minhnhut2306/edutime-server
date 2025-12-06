@@ -4,7 +4,10 @@ const OTP = require("../models/otpModel");
 const crypto = require("crypto");
 const validator = require("../validations/authen.validation");
 const Teacher = require("../models/teacherModel");
-const { sendOTPEmail, sendPasswordChangeNotification } = require("../utils/emailService");
+const {
+  sendOTPEmail,
+  sendPasswordChangeNotification,
+} = require("../utils/emailService");
 
 const TOKEN_EXPIRY_DAYS = 7;
 const OTP_EXPIRY_MINUTES = 10;
@@ -16,14 +19,72 @@ const generateToken = () => ({
   expiresAt: new Date(Date.now() + TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
 });
 
+const parseDeviceInfo = (userAgent, ip) => {
+  const ua = userAgent || "";
+
+  let browser = "Unknown";
+  if (ua.includes("Chrome") && !ua.includes("Edg")) browser = "Chrome";
+  else if (ua.includes("Firefox")) browser = "Firefox";
+  else if (ua.includes("Safari") && !ua.includes("Chrome")) browser = "Safari";
+  else if (ua.includes("Edg")) browser = "Edge";
+
+  let os = "Unknown";
+  if (ua.includes("Windows")) os = "Windows";
+  else if (ua.includes("Mac")) os = "MacOS";
+  else if (ua.includes("Linux")) os = "Linux";
+  else if (ua.includes("Android")) os = "Android";
+  else if (ua.includes("iOS") || ua.includes("iPhone") || ua.includes("iPad"))
+    os = "iOS";
+
+  let device = "Desktop";
+  if (ua.includes("Mobile")) device = "Mobile";
+  else if (ua.includes("Tablet")) device = "Tablet";
+
+  return {
+    userAgent: ua,
+    ip: ip || "Unknown",
+    browser,
+    os,
+    device,
+  };
+};
+
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-const createTokenRecord = async (userId) => {
-  await Token.deleteMany({ userId });
+const createTokenRecord = async (userId, deviceInfo) => {
+  const deactivatedTokens = await Token.updateMany(
+    { userId, isActive: true },
+    {
+      $set: {
+        isActive: false,
+        deactivatedAt: new Date(),
+        deactivatedBy: "login_from_another_device",
+      },
+    }
+  );
+
+  if (deactivatedTokens.modifiedCount > 0) {
+    console.log(
+      `Vô hiệu hóa ${deactivatedTokens.modifiedCount} token cũ của user ${userId}`
+    );
+  }
+
   const { token, expiresAt } = generateToken();
-  await Token.create({ userId, token, expiresAt });
+
+  const newToken = await Token.create({
+    userId,
+    token,
+    expiresAt,
+    deviceInfo,
+    isActive: true,
+  });
+
+  console.log(
+    `Token mới được tạo cho ${deviceInfo.browser} trên ${deviceInfo.os}`
+  );
+
   return token;
 };
 
@@ -31,7 +92,19 @@ const validateToken = async (token) => {
   if (!token) throw new Error("Token là bắt buộc");
 
   const tokenData = await Token.findOne({ token });
+
   if (!tokenData) throw new Error("Token không hợp lệ");
+
+  if (!tokenData.isActive) {
+    const deviceDesc = tokenData.deviceInfo
+      ? getDeviceDescription(tokenData.deviceInfo)
+      : "thiết bị khác";
+
+    throw new Error(
+      `Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.\n\n` +
+        `Tài khoản đã được đăng nhập từ ${deviceDesc}.`
+    );
+  }
 
   if (tokenData.expiresAt < new Date()) {
     await Token.deleteOne({ token });
@@ -41,21 +114,38 @@ const validateToken = async (token) => {
   return tokenData;
 };
 
-const login = async (email, password) => {
+const login = async (email, password, userAgent, ip) => {
   if (!email || !password) {
     throw new Error("Email và mật khẩu là bắt buộc");
   }
+
   const normalizedEmail = normalizeEmail(email);
   const user = await User.findOne({ email: normalizedEmail });
-  
+
   if (!user) throw new Error("Người dùng không tồn tại");
 
   const isPasswordValid = await user.comparePassword(password);
   if (!isPasswordValid) throw new Error("Mật khẩu không đúng");
 
-  const token = await createTokenRecord(user._id);
+  const deviceInfo = parseDeviceInfo(userAgent, ip);
 
-  return { user: user.toJSON(), token };
+  console.log(
+    `User ${email} đăng nhập từ ${
+      deviceInfo.browser
+    } (${deviceInfo.fingerprint.substring(0, 8)}...)`
+  );
+
+  const token = await createTokenRecord(user._id, deviceInfo);
+
+  return {
+    user: user.toJSON(),
+    token,
+    deviceInfo: {
+      browser: deviceInfo.browser,
+      os: deviceInfo.os,
+      device: deviceInfo.device,
+    },
+  };
 };
 
 const register = async (email, password) => {
@@ -92,13 +182,40 @@ const verifyToken = async (token) => {
   return await validateToken(token);
 };
 
-const refreshToken = async (token) => {
+const refreshToken = async (token, userAgent, ip) => {
   const tokenData = await validateToken(token);
 
-  await Token.deleteOne({ token });
-  const newToken = await createTokenRecord(tokenData.userId);
+  await Token.updateOne(
+    { token },
+    {
+      isActive: false,
+      deactivatedAt: new Date(),
+      deactivatedBy: "token_refresh",
+    }
+  );
+
+  const deviceInfo = parseDeviceInfo(userAgent, ip);
+  const newToken = await createTokenRecord(tokenData.userId, deviceInfo);
 
   return { token: newToken };
+};
+
+const getUserTokens = async (userId) => {
+  const tokens = await Token.find({ userId })
+    .sort({ createdAt: -1 })
+    .limit(10)
+    .select('deviceInfo isActive createdAt deactivatedAt deactivatedBy');
+  
+  return tokens.map(t => ({
+    browser: t.deviceInfo?.browser,
+    os: t.deviceInfo?.os,
+    device: t.deviceInfo?.device,
+    ip: t.deviceInfo?.ip,
+    isActive: t.isActive,
+    loginAt: t.createdAt,
+    logoutAt: t.deactivatedAt,
+    logoutReason: t.deactivatedBy,
+  }));
 };
 
 const revokeToken = async (token) => {
@@ -138,17 +255,15 @@ const changePassword = async (userId, newPassword) => {
   await user.save();
   await Token.deleteMany({ userId: user._id });
 
-  // Gửi email thông báo (không throw error nếu thất bại)
   try {
     await sendPasswordChangeNotification(user.email);
   } catch (emailError) {
-    console.warn("⚠️ Không thể gửi email thông báo:", emailError.message);
+    console.warn("Không thể gửi email thông báo:", emailError.message);
   }
 
   return { message: "Đổi mật khẩu thành công" };
 };
 
-// Đổi mật khẩu với mật khẩu cũ
 const changePasswordWithOld = async (userId, oldPassword, newPassword) => {
   if (!userId) throw new Error("ID người dùng là bắt buộc");
   if (!oldPassword) throw new Error("Mật khẩu cũ là bắt buộc");
@@ -161,11 +276,9 @@ const changePasswordWithOld = async (userId, oldPassword, newPassword) => {
   const user = await User.findById(userId);
   if (!user) throw new Error("Người dùng không tồn tại");
 
-  // Kiểm tra mật khẩu cũ
   const isPasswordValid = await user.comparePassword(oldPassword);
   if (!isPasswordValid) throw new Error("Mật khẩu cũ không đúng");
 
-  // Kiểm tra mật khẩu mới không trùng mật khẩu cũ
   const isSamePassword = await user.comparePassword(newPassword);
   if (isSamePassword) throw new Error("Mật khẩu mới phải khác mật khẩu cũ");
 
@@ -173,17 +286,15 @@ const changePasswordWithOld = async (userId, oldPassword, newPassword) => {
   await user.save();
   await Token.deleteMany({ userId: user._id });
 
-  // Gửi email thông báo (không throw error nếu thất bại)
   try {
     await sendPasswordChangeNotification(user.email);
   } catch (emailError) {
-    console.warn("⚠️ Không thể gửi email thông báo:", emailError.message);
+    console.warn("Không thể gửi email thông báo:", emailError.message);
   }
 
   return { message: "Đổi mật khẩu thành công" };
 };
 
-// Gửi OTP qua email
 const sendOTP = async (email) => {
   if (!email) throw new Error("Email là bắt buộc");
 
@@ -193,14 +304,11 @@ const sendOTP = async (email) => {
     throw new Error("Định dạng email không hợp lệ");
   }
 
-  // Kiểm tra user có tồn tại không
   const user = await User.findOne({ email: normalizedEmail });
   if (!user) throw new Error("Email không tồn tại trong hệ thống");
 
-  // Xóa OTP cũ của email này
   await OTP.deleteMany({ email: normalizedEmail });
 
-  // Tạo OTP mới
   const otp = generateOTP();
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
@@ -210,18 +318,18 @@ const sendOTP = async (email) => {
     expiresAt,
   });
 
-  // Gửi OTP qua email
   try {
     await sendOTPEmail(normalizedEmail, otp);
   } catch (emailError) {
-    console.error("❌ Lỗi gửi email OTP:", emailError.message);
-    throw new Error("Không thể gửi email. Vui lòng kiểm tra cấu hình email trong .env");
+    console.error("Lỗi gửi email OTP:", emailError.message);
+    throw new Error(
+      "Không thể gửi email. Vui lòng kiểm tra cấu hình email trong .env"
+    );
   }
 
   return { message: "Mã OTP đã được gửi đến email của bạn" };
 };
 
-// Xác thực OTP
 const verifyOTP = async (email, otp) => {
   if (!email || !otp) throw new Error("Email và OTP là bắt buộc");
 
@@ -240,14 +348,12 @@ const verifyOTP = async (email, otp) => {
     throw new Error("Mã OTP đã hết hạn");
   }
 
-  // Đánh dấu OTP đã xác thực
   otpRecord.verified = true;
   await otpRecord.save();
 
   return { message: "Xác thực OTP thành công" };
 };
 
-// Đặt lại mật khẩu sau khi xác thực OTP
 const resetPassword = async (email, otp, newPassword) => {
   if (!email || !otp || !newPassword) {
     throw new Error("Email, OTP và mật khẩu mới là bắt buộc");
@@ -259,7 +365,6 @@ const resetPassword = async (email, otp, newPassword) => {
     throw new Error("Mật khẩu phải có ít nhất 8 ký tự và chứa ký tự đặc biệt");
   }
 
-  // Kiểm tra OTP đã được xác thực
   const otpRecord = await OTP.findOne({
     email: normalizedEmail,
     otp,
@@ -275,24 +380,20 @@ const resetPassword = async (email, otp, newPassword) => {
     throw new Error("Mã OTP đã hết hạn");
   }
 
-  // Tìm user và đổi mật khẩu
   const user = await User.findOne({ email: normalizedEmail });
   if (!user) throw new Error("Người dùng không tồn tại");
 
   user.password = newPassword;
   await user.save();
 
-  // Xóa tất cả token của user
   await Token.deleteMany({ userId: user._id });
 
-  // Xóa OTP đã sử dụng
   await OTP.deleteMany({ email: normalizedEmail });
 
-  // Gửi email thông báo (không throw error nếu thất bại)
   try {
     await sendPasswordChangeNotification(user.email);
   } catch (emailError) {
-    console.warn("⚠️ Không thể gửi email thông báo:", emailError.message);
+    console.warn("Không thể gửi email thông báo:", emailError.message);
   }
 
   return { message: "Đặt lại mật khẩu thành công" };
@@ -354,4 +455,6 @@ module.exports = {
   sendOTP,
   verifyOTP,
   resetPassword,
+  validateToken,
+  getUserTokens,
 };
