@@ -9,6 +9,9 @@ const {
   sendPasswordChangeNotification,
 } = require("../utils/emailService");
 
+// ✅ Import từ deviceParser
+const { parseDeviceInfo, getDeviceDescription } = require('../utils/deviceParser');
+
 const TOKEN_EXPIRY_DAYS = 7;
 const OTP_EXPIRY_MINUTES = 10;
 
@@ -19,41 +22,26 @@ const generateToken = () => ({
   expiresAt: new Date(Date.now() + TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
 });
 
-const parseDeviceInfo = (userAgent, ip) => {
-  const ua = userAgent || "";
-
-  let browser = "Unknown";
-  if (ua.includes("Chrome") && !ua.includes("Edg")) browser = "Chrome";
-  else if (ua.includes("Firefox")) browser = "Firefox";
-  else if (ua.includes("Safari") && !ua.includes("Chrome")) browser = "Safari";
-  else if (ua.includes("Edg")) browser = "Edge";
-
-  let os = "Unknown";
-  if (ua.includes("Windows")) os = "Windows";
-  else if (ua.includes("Mac")) os = "MacOS";
-  else if (ua.includes("Linux")) os = "Linux";
-  else if (ua.includes("Android")) os = "Android";
-  else if (ua.includes("iOS") || ua.includes("iPhone") || ua.includes("iPad"))
-    os = "iOS";
-
-  let device = "Desktop";
-  if (ua.includes("Mobile")) device = "Mobile";
-  else if (ua.includes("Tablet")) device = "Tablet";
-
-  return {
-    userAgent: ua,
-    ip: ip || "Unknown",
-    browser,
-    os,
-    device,
-  };
-};
+// ❌ XÓA function parseDeviceInfo cũ (dòng 37-48) - Dùng từ deviceParser thay thế
 
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
 const createTokenRecord = async (userId, deviceInfo) => {
+  // ✅ Đảm bảo deviceInfo có đủ thông tin
+  if (!deviceInfo || !deviceInfo.browser) {
+    console.warn('⚠️ deviceInfo không đầy đủ:', deviceInfo);
+    deviceInfo = {
+      browser: 'Unknown',
+      os: 'Unknown',
+      device: 'Unknown',
+      userAgent: 'Unknown',
+      ip: 'Unknown',
+      fingerprint: 'unknown'
+    };
+  }
+
   const deactivatedTokens = await Token.updateMany(
     { userId, isActive: true },
     {
@@ -81,8 +69,13 @@ const createTokenRecord = async (userId, deviceInfo) => {
     isActive: true,
   });
 
+  // ✅ SAFE substring với optional chaining
+  const fingerprintPreview = deviceInfo.fingerprint 
+    ? deviceInfo.fingerprint.substring(0, 8) 
+    : 'N/A';
+  
   console.log(
-    `Token mới được tạo cho ${deviceInfo.browser} trên ${deviceInfo.os}`
+    `Token mới được tạo cho ${deviceInfo.browser} trên ${deviceInfo.os} (${fingerprintPreview}...)`
   );
 
   return token;
@@ -96,13 +89,14 @@ const validateToken = async (token) => {
   if (!tokenData) throw new Error("Token không hợp lệ");
 
   if (!tokenData.isActive) {
+    // ✅ Sử dụng getDeviceDescription đã import
     const deviceDesc = tokenData.deviceInfo
       ? getDeviceDescription(tokenData.deviceInfo)
-      : "thiết bị khác";
+      : "thiết bị không xác định";
 
     throw new Error(
-      `Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.\n\n` +
-        `Tài khoản đã được đăng nhập từ ${deviceDesc}.`
+      `Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại. ` +
+      `Tài khoản đã được đăng nhập từ ${deviceDesc}.`
     );
   }
 
@@ -127,12 +121,16 @@ const login = async (email, password, userAgent, ip) => {
   const isPasswordValid = await user.comparePassword(password);
   if (!isPasswordValid) throw new Error("Mật khẩu không đúng");
 
+  // ✅ Sử dụng parseDeviceInfo từ deviceParser (có fingerprint)
   const deviceInfo = parseDeviceInfo(userAgent, ip);
 
+  // ✅ SAFE substring với optional chaining
+  const fingerprintPreview = deviceInfo.fingerprint 
+    ? deviceInfo.fingerprint.substring(0, 8) 
+    : 'N/A';
+
   console.log(
-    `User ${email} đăng nhập từ ${
-      deviceInfo.browser
-    } (${deviceInfo.fingerprint.substring(0, 8)}...)`
+    `User ${email} đăng nhập từ ${deviceInfo.browser} (${fingerprintPreview}...)`
   );
 
   const token = await createTokenRecord(user._id, deviceInfo);

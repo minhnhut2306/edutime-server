@@ -6,8 +6,6 @@ const ERROR_MESSAGES = {
   "Invalid token": "Token không hợp lệ",
   "Token expired": "Token đã hết hạn",
   "Token is required": "Token không hợp lệ",
-  "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại":
-    "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại",
 };
 
 const authMiddleware = async (req, res, next) => {
@@ -39,17 +37,20 @@ const authMiddleware = async (req, res, next) => {
 
     next();
   } catch (error) {
-    const msg = ERROR_MESSAGES[error.message] || error.message || "Xác thực thất bại";
-
+    console.error('[authMiddleware] Error:', error.message);
+    
+    // ✅ Nếu error message chứa "Phiên đăng nhập đã hết hạn", GIỮ NGUYÊN message gốc
     if (error.message.includes("Phiên đăng nhập đã hết hạn")) {
       return res.status(401).json(
-        unauthorizedResponse("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại")
+        unauthorizedResponse(error.message) // ✅ Trả về FULL message từ validateToken
       );
     }
+    
+    // ✅ Các lỗi khác thì dùng ERROR_MESSAGES hoặc message gốc
+    const msg = ERROR_MESSAGES[error.message] || error.message || "Xác thực thất bại";
     
     return res.status(401).json(unauthorizedResponse(msg));
   }
 };
-
 
 module.exports = authMiddleware;

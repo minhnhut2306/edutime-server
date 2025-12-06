@@ -86,6 +86,7 @@ const parseDeviceInfo = (userAgent, ip) => {
   if (ua.includes('Mobile')) device = 'Mobile';
   else if (ua.includes('Tablet') || ua.includes('iPad')) device = 'Tablet';
   
+  // ✅ TẠO FINGERPRINT - QUAN TRỌNG!
   const fingerprintData = `${browser}|${browserVersion}|${os}|${osVersion}|${device}|${ua}`;
   const fingerprint = crypto
     .createHash('sha256')
@@ -93,6 +94,7 @@ const parseDeviceInfo = (userAgent, ip) => {
     .digest('hex')
     .substring(0, 32);
   
+  // ✅ PHẢI RETURN FINGERPRINT!
   return {
     userAgent: ua,
     ip: ip || 'Unknown',
@@ -101,7 +103,7 @@ const parseDeviceInfo = (userAgent, ip) => {
     os,
     osVersion,
     device,
-    fingerprint,
+    fingerprint, // ✅ DÒNG NÀY QUAN TRỌNG NHẤT!
   };
 };
 

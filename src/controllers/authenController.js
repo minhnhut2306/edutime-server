@@ -3,7 +3,8 @@ const asyncHandler = require("../middleware/asyncHandler");
 const {
   successResponse,
   badRequestResponse,
-  createdResponse
+  createdResponse,
+  unauthorizedResponse  // ✅ QUAN TRỌNG: Phải có dòng này!
 } = require("../helper/createResponse.helper");
 
 const extractToken = (req) => req.headers.authorization?.replace("Bearer ", "");
@@ -57,18 +58,42 @@ const logout = asyncHandler(async (req, res) => {
   return res.json(successResponse("Đăng xuất thành công"));
 });
 
+// ✅ HÀM QUAN TRỌNG - ĐÃ SỬA
 const verifyToken = asyncHandler(async (req, res) => {
   const token = extractToken(req);
   if (!validateToken(token, res)) return;
 
-  const tokenData = await authenService.verifyToken(token);
+  try {
+    const tokenData = await authenService.verifyToken(token);
 
-  return res.json(
-    successResponse("Token hợp lệ", {
-      userId: tokenData.userId,
-      expiresAt: tokenData.expiresAt
-    })
-  );
+    return res.json(
+      successResponse("Token hợp lệ", {
+        userId: tokenData.userId,
+        expiresAt: tokenData.expiresAt
+      })
+    );
+  } catch (error) {
+    console.error('[verifyToken] Error:', error.message);
+    
+    // ✅ Nếu error liên quan đến phiên đăng nhập hết hạn, trả 401
+    if (error.message.includes("Phiên đăng nhập đã hết hạn")) {
+      return res.status(401).json(
+        unauthorizedResponse(error.message) // ✅ Giữ nguyên full message
+      );
+    }
+    
+    // ✅ Các lỗi khác
+    if (error.message.includes("Token đã hết hạn")) {
+      return res.status(401).json(unauthorizedResponse("Token đã hết hạn"));
+    }
+    
+    if (error.message.includes("Token không hợp lệ")) {
+      return res.status(401).json(unauthorizedResponse("Token không hợp lệ"));
+    }
+    
+    // ✅ Lỗi không xác định
+    return res.status(401).json(unauthorizedResponse(error.message || "Xác thực thất bại"));
+  }
 });
 
 const refreshToken = asyncHandler(async (req, res) => {
@@ -130,7 +155,6 @@ const changePassword = asyncHandler(async (req, res) => {
   return res.json(successResponse("Đổi mật khẩu thành công"));
 });
 
-// Đổi mật khẩu với mật khẩu cũ
 const changePasswordWithOld = asyncHandler(async (req, res) => {
   const { oldPassword, newPassword } = req.body;
 
@@ -144,7 +168,6 @@ const changePasswordWithOld = asyncHandler(async (req, res) => {
   return res.json(successResponse("Đổi mật khẩu thành công"));
 });
 
-// Gửi OTP
 const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
 
@@ -158,7 +181,6 @@ const forgotPassword = asyncHandler(async (req, res) => {
   return res.json(successResponse(result.message));
 });
 
-// Xác thực OTP
 const verifyOTP = asyncHandler(async (req, res) => {
   const { email, otp } = req.body;
 
@@ -172,7 +194,6 @@ const verifyOTP = asyncHandler(async (req, res) => {
   return res.json(successResponse(result.message));
 });
 
-// Đặt lại mật khẩu
 const resetPassword = asyncHandler(async (req, res) => {
   const { email, otp, newPassword } = req.body;
 
